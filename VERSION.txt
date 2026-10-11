@@ -1,5 +1,14 @@
-# HKJC 足球價值投注系統 v1.0.0
-2026-10-10 首版：Poisson/Dixon-Coles 引擎、馬會抓取層（含 probe 同人手輸入後備）、
+# HKJC 足球價值投注系統 v1.1.1
+2026-10-11 v1.1.1 修 Windows bug：.env 一開就會讀到 Railway 專用嘅 DB_PATH=/data/football.db，
+令本機出 FileNotFoundError: [WinError 2] ...: '/data'。/data 已改成註釋（本機留空＝用
+repo 內 data\football.db）；config.py 見到 Windows + POSIX 絕對路徑會自動退回本機路徑並印原因；
+db.py 寫唔入目標夾會退回本機 data 夾（唔會整個程式死）；requirements 加 tzdata（Windows 需要）。
+
+2026-10-11 v1.1.0：config.py 自己讀 .env（backend/ 或 repo 根目錄都可以，唔需要 python-dotenv）；
+新增 `cli.py env` 診斷指令（Python／程式版本、.env 讀到邊個檔、資料庫、token、門檻）；
+notify 未設定時會提示去邊度填；README／手冊加 Windows（py）同資料夾位置說明。
+
+2026-10-10 v1.0.0：Poisson/Dixon-Coles 引擎、馬會抓取層（含 probe 同人手輸入後備）、
 價值判斷（去水 + EV）、三層風控、自動跟注（paper）同真實注項分開記錄、
 自動結算 + CLV、Telegram 雙向 bot、Flask 排程 + 儀表板、walk-forward 回測、
 Railway/gunicorn 部署設定。示範資料可即時跑通全流程。

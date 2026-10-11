@@ -2,6 +2,45 @@
 import os
 from zoneinfo import ZoneInfo
 
+# ---------------------------------------------------------------- .env loading
+# Load backend/.env and then repo-root/.env (first hit per key wins). We only set
+# keys that are not already in os.environ, so Railway Variables always win.
+# Deliberately dependency-free (no python-dotenv) so it works on a fresh machine
+# before `pip install` has run - and so a .env kept OUTSIDE backend/ still works,
+# which is what people do when they want to be sure it never reaches GitHub.
+ENV_FILE = None
+
+
+def _load_env_files():
+    global ENV_FILE
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = (
+        os.path.join(here, ".env"),                    # backend/.env
+        os.path.join(os.path.dirname(here), ".env"),   # repo root/.env
+    )
+    for path in candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8-sig") as fh:
+                lines = fh.readlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+        if ENV_FILE is None:
+            ENV_FILE = path
+
+
+_load_env_files()
+
 # ---------------------------------------------------------------- environment
 HK_TZ = ZoneInfo("Asia/Hong_Kong")
 
@@ -27,8 +66,28 @@ TELEGRAM_CHAT_ID = _env("TELEGRAM_CHAT_ID", "")
 TELEGRAM_CHAT_ID_GROUP = _env("TELEGRAM_CHAT_ID_GROUP", "")
 
 # ---------------------------------------------------------------- storage
-DB_PATH = _env("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "football.db"))
-DATA_DIR = os.path.dirname(DB_PATH)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_LOCAL_DB = os.path.join(os.path.dirname(_HERE), "data", "football.db")
+
+
+def _sanitize_db_path(raw, on_windows=None):
+    """Railway 要 DB_PATH=/data/...（掛載卷），但 Windows 完全冇呢個路徑，硬用就會
+    FileNotFoundError: [WinError 2] ...: '/data'。所以喺 Windows 見到 POSIX 絕對路徑
+    就退回本機 data 夾，並印出原因（唔好靜靜死）。"""
+    if on_windows is None:
+        on_windows = (os.name == "nt")
+    if not raw:
+        return _LOCAL_DB
+    if on_windows and raw.startswith("/"):
+        print(f"[config] .env 嘅 DB_PATH={raw} 係 Railway/Linux 路徑，Windows 用唔到 → 改用 {_LOCAL_DB}\n"
+              f"         （想指定位置：喺 .env 寫 DB_PATH=D:\\你的路徑\\football.db；"
+              f"Railway 部署就照用 /data/football.db）")
+        return _LOCAL_DB
+    return raw
+
+
+DB_PATH = _sanitize_db_path(_env("DB_PATH", None, str))
+DATA_DIR = os.path.dirname(DB_PATH) or os.path.dirname(_LOCAL_DB)
 PROBE_DIR = os.path.join(DATA_DIR, "probe")
 
 # ---------------------------------------------------------------- model

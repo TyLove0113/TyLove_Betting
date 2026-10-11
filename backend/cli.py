@@ -21,6 +21,37 @@ import settings_store  # noqa: E402
 from timeutil import now_hk  # noqa: E402
 
 
+def _version_line():
+    """第一行 VERSION.txt —— 用嚟確認本機係唔係最新版。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(os.path.dirname(here), "VERSION.txt"),
+                 os.path.join(here, "VERSION.txt")):
+        try:
+            with open(cand, "r", encoding="utf-8") as fh:
+                first = fh.readline().strip().lstrip("#").strip()
+        except OSError:
+            continue
+        if first:
+            return first
+    return "（冇 VERSION.txt）"
+
+
+def env_report():
+    """Show which .env got loaded and whether Telegram is wired up."""
+    tok = config.TELEGRAM_BOT_TOKEN
+    tok_txt = (tok[:8] + "…（已設定）") if tok else "未設定 → 去 backend/.env 或 repo 根目錄 .env 填 TELEGRAM_BOT_TOKEN"
+    return "\n".join([
+        f"Python          : {sys.version.split()[0]}",
+        f"程式版本        : {_version_line()}",
+        f"執行檔          : {sys.executable}",
+        f".env 讀取自     : {config.ENV_FILE or '（冇找到 .env，全部用預設值／系統環境變數）'}",
+        f"資料庫          : {config.DB_PATH}",
+        f"Telegram token  : {tok_txt}",
+        f"Telegram chat   : {config.TELEGRAM_CHAT_ID or '未設定'}",
+        f"EV 門檻         : {config.EV_THRESHOLD:.0%}   賠率範圍 {config.MIN_ODDS}–{config.MAX_ODDS}   注碼 {config.STAKING_MODE}",
+    ])
+
+
 def main():
     ap = argparse.ArgumentParser(description="HKJC football value betting system")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -51,6 +82,7 @@ def main():
     p_demo.add_argument("--seed", action="store_true", help="write a synthetic league and run end-to-end")
     sub.add_parser("serve")
     sub.add_parser("settings")
+    sub.add_parser("env")
     p_not = sub.add_parser("notify")
     p_not.add_argument("message", nargs="?", default="✅ Telegram 設定成功 — HKJC 足球價值投注系統")
 
@@ -128,10 +160,18 @@ def main():
     elif a.cmd == "settings":
         print(json.dumps(settings_store.dump(), ensure_ascii=False, indent=2))
 
+    elif a.cmd == "env":
+        print(env_report())
+
     elif a.cmd == "notify":
         import notifier
         res = notifier.push(a.message)
-        print("sent" if res.get("ok") else f"not sent: {res.get('reason')}")
+        if res.get("ok"):
+            print("sent")
+        else:
+            print(f"not sent: {res.get('reason')}")
+            print("→ 喺 backend/.env（或 repo 根目錄 .env）填 TELEGRAM_BOT_TOKEN 同 TELEGRAM_CHAT_ID，"
+                  "再用 `cli.py env` 睇下程式有冇讀到。")
 
     elif a.cmd == "serve":
         os.environ.setdefault("PORT", "8080")

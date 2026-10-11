@@ -63,9 +63,93 @@
 
 ## 4. 本地快速開始（5 分鐘）
 
+> **★ Windows 用戶（你）：只照 4a。** 4b 係 Linux／macOS／Railway 專用；喺 Windows 貼 4b 一定會出
+> 「`pip` 無法辨識」「`python3` 無法辨識」——因為 Windows 根本冇 `python3` 呢個名，`pip` 亦要用
+> `python -m pip` 叫。
+> 如果你係用 Cursor 嘅 AI（Chat / Agent）叫佢幫你跑，佢好可能照 4b 嘅 Linux 寫法去做，於是就出
+> 呢兩個錯。請自己開 **Terminal → New Terminal**，親手貼 4a。
+
+### 4a. Windows（Cursor / PowerShell — 你部機）
+
+Cursor 預設終端係 **PowerShell**。你部機嘅情況：**Python 3.11.9 已經裝好，但 `python` 唔喺 PATH**
+（所以打 `python`／`python3` 都會「無法辨識」）。唔需要重裝，**一律用 `py` 叫佢**就冇問題。
+
+> **★ 先確認你企喺邊個資料夾**（最常中嘅坑）：打 `dir`
+> - 見到 `README.md` 同 `backend`（資料夾）→ 你喺 **repo 根目錄**，照下面 block 打。
+> - 見到 `cli.py`、`config.py`、`engine.py` → 你已經喺 **backend 裡面**。唔好再打 `cd backend`
+>   （會變 `backend\backend`），亦唔好打 `backend\requirements.txt`（該檔喺上一層）。
+>   改用：`cd ..` 之後照下面 block 打。
+
+
+**第一步：裝套件（只做一次；喺 repo 根目錄打，即見到 `README.md` 同 `backend` 資料夾嗰層）**
+
+```powershell
+py -3.11 -m pip install -r backend\requirements.txt
+```
+
+**第二步：跑（喺 `backend` 資料夾內，即見到 `cli.py` 嗰層）**
+
+```powershell
+py cli.py env                    # 先睇：Python 版本、.env 讀到未、資料庫位置
+py cli.py initdb
+py cli.py demo --seed            # 建示範聯賽同今日賽事（有 2 場故意做偏價）
+py cli.py scan --no-push         # 睇會唔會搵到價值
+py cli.py report
+py selftest.py                   # 一鍵自測全流程
+py cli.py serve                  # 本機開儀表板 http://localhost:8080
+```
+
+`py` 唔靠 PATH，喺任何新終端都一樣得，所以日常就用佢。
+
+**`.env` 放邊？** 放 `backend\.env` 或者 **repo 根目錄** `.env` 都可以 —— 程式兩個位都會搵
+（`backend\` 優先）。**唔需要搬走**：`.gitignore` 已經擋咗 `.env` 同 `.env.*`，唔會被 push 上 GitHub；
+只有冇密碼嘅範本 `.env.example` 會上 GitHub。想確認讀咗邊個檔、token 有冇生效：`py cli.py env`。
+
+**（可選）想用獨立 venv，唔污染系統 Python**：
+
+```powershell
+py -3.11 -m venv .venv                                                     # 喺 repo 根目錄
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+cd backend
+..\.venv\Scripts\python.exe cli.py scan --no-push                          # 唔需要 activate
+```
+
+**一鍵版**：在 repo 根目錄打 `.\run_local.cmd`（雙擊都可以）——會自動建 venv、裝套件、initdb、
+seed、自測，最後開儀表板。唔需要事先改 PowerShell 執行原則。呢個腳本會自己搵自己嘅位置，
+所以就算你身處 `backend` 裡面、或者喺其他資料夾用完整路徑叫它，都一樣跑得對。
+
+**已經身處 `backend` 資料夾裡面？** 唔需要 `cd`，直接：
+
+```powershell
+py cli.py env                    # 睇版本／.env 讀到未／資料庫／token（最新版先有呢個指令）
+py cli.py scan --no-push         # 出價值清單
+py cli.py report                 # 日報（ROI、命中率、CLV）
+py selftest.py                   # 全流程自測
+py cli.py serve                  # 儀表板 http://localhost:8080
+```
+
+**點更新到最新版**：下載最新 `football-value-system-v1.zip`，解壓後用裡面嘅 `backend\` 同幾個根目錄檔
+（`README.md`、`VERSION.txt`、`.gitignore`、`run_local.ps1`、`run_local.cmd`）覆蓋你本機嘅同名檔。
+你嘅資料庫喺 `TyLove_Betting\data\football.db`（喺 `backend\` **外面**），所以覆蓋唔會影響紀錄。
+更新後打 `py cli.py env`，第一行就會顯示版本（現時係 `HKJC 足球價值投注系統 v1.1.1`）。
+
+> **★ 如果你選擇用 venv 嘅 `Activate.ps1` 方式**：啟動只係當前終端有效；每次開新終端、或重開
+> Cursor，都要再跑一次，否則 `python` 又會「無法辨識」。唔想理就用 `py cli.py …`，
+> 或者 `..\.venv\Scripts\python.exe cli.py …`（兩者都唔靠 PATH）。
+
+> **Windows 錯誤對照**：`python`／`python3`／`pip` 無法辨識 → 一律改用 `py`（`py cli.py scan`、
+> `py -m pip install …`）；`cp` 無法辨識 → 用 `copy`（PowerShell 本身有 `cp` 別名，通常唔會出事）；
+> `FileNotFoundError: [WinError 2] … '/data'` → `.env` 開咗 Railway 專用嘅 `DB_PATH=/data/football.db`，
+> 喺 `.env` 前面加 `#` 註釋佢即可（最新版本亦會自動退回本機 `data\` 夾並印出提示）。
+>
+> **Python 版本**：套件鎖定 3.11（numpy 1.26.4 / xgboost 2.0.3 只有 3.11–3.12 嘅預編譯輪檔）。
+> 如果你部機係 3.13，請另外裝一個 3.11，再用 `py -3.11 -m venv .venv`。
+
+### 4b. Linux / macOS / Railway Shell（Windows 唔好用）
+
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install -r requirements.txt        # Windows 要用 python -m pip install -r requirements.txt
 
 python cli.py initdb
 python cli.py demo --seed          # 建示範聯賽同今日賽事（有 2 場故意做偏價）

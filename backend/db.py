@@ -142,7 +142,16 @@ CREATE TABLE IF NOT EXISTS results (
 
 
 def connect():
-    os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
+    folder = os.path.dirname(config.DB_PATH)
+    if folder:
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as exc:
+            # 例如 /data（Railway 卷）喺本機唔存在或冇權限：退回本機 data 夾，唔好整個程式死。
+            fallback_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+            print(f"[db] 寫唔入 {folder}（{exc}）→ 改用 {fallback_dir}")
+            os.makedirs(fallback_dir, exist_ok=True)
+            config.DB_PATH = os.path.join(fallback_dir, "football.db")
     conn = sqlite3.connect(config.DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
