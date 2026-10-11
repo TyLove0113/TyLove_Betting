@@ -1,0 +1,23 @@
+# secrets first - the old Betting.zip shipped a live API key inside .env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# data / runtime
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+data/probe/
+**/data/probe/
+**/data/demo_*.csv
+**/data/backtest_report.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+*.log
+preview/

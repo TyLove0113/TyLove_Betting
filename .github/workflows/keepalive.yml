@@ -1,0 +1,19 @@
+name: railway-keepalive
+
+# Railway free/trial services sleep when idle. This pings the healthcheck so the
+# scheduler keeps running (same trick already used on the trading bot).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ping healthz
+        run: |
+          if [ -z "${{ secrets.RAILWAY_URL }}" ]; then
+            echo "RAILWAY_URL secret not set - skipping"; exit 0
+          fi
+          curl -sS -m 30 "${{ secrets.RAILWAY_URL }}/healthz" || true

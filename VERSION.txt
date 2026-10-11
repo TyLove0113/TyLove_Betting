@@ -1,0 +1,5 @@
+# HKJC 足球價值投注系統 v1.0.0
+2026-10-10 首版：Poisson/Dixon-Coles 引擎、馬會抓取層（含 probe 同人手輸入後備）、
+價值判斷（去水 + EV）、三層風控、自動跟注（paper）同真實注項分開記錄、
+自動結算 + CLV、Telegram 雙向 bot、Flask 排程 + 儀表板、walk-forward 回測、
+Railway/gunicorn 部署設定。示範資料可即時跑通全流程。
