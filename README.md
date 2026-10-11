@@ -128,6 +128,15 @@ py selftest.py                   # 全流程自測
 py cli.py serve                  # 儀表板 http://localhost:8080
 ```
 
+**★ `cli.py` 喺 `backend\` 裡面，唔喺 repo 根目錄。** 所以喺根目錄打 `py cli.py …` 會出
+`can't open file '…\TyLove_Betting\cli.py'`。喺根目錄想直接跑，用提供好嘅入口：
+
+```powershell
+.\cli.cmd env                    # 等同 backend\ 內嘅 py cli.py env
+.\cli.cmd scan --no-push
+.\cli.cmd serve
+```
+
 **點更新到最新版**：下載最新 `football-value-system-v1.zip`，解壓後用裡面嘅 `backend\` 同幾個根目錄檔
 （`README.md`、`VERSION.txt`、`.gitignore`、`run_local.ps1`、`run_local.cmd`）覆蓋你本機嘅同名檔。
 你嘅資料庫喺 `TyLove_Betting\data\football.db`（喺 `backend\` **外面**），所以覆蓋唔會影響紀錄。
@@ -140,7 +149,9 @@ py cli.py serve                  # 儀表板 http://localhost:8080
 > **Windows 錯誤對照**：`python`／`python3`／`pip` 無法辨識 → 一律改用 `py`（`py cli.py scan`、
 > `py -m pip install …`）；`cp` 無法辨識 → 用 `copy`（PowerShell 本身有 `cp` 別名，通常唔會出事）；
 > `FileNotFoundError: [WinError 2] … '/data'` → `.env` 開咗 Railway 專用嘅 `DB_PATH=/data/football.db`，
-> 喺 `.env` 前面加 `#` 註釋佢即可（最新版本亦會自動退回本機 `data\` 夾並印出提示）。
+> 喺 `.env` 前面加 `#` 註釋佢即可（最新版本亦會自動退回本機 `data\` 夾並印出提示）；
+> `scan` 顯示 `checked 0` → 一係已達每日注數上限（睇 `reason`），一係手上版本未修跨午夜嘅窗
+> （v1.1.3 起掃描改用以現在為中心嘅時間窗，凌晨開賽嘅場都掃到）。
 >
 > **Python 版本**：套件鎖定 3.11（numpy 1.26.4 / xgboost 2.0.3 只有 3.11–3.12 嘅預編譯輪檔）。
 > 如果你部機係 3.13，請另外裝一個 3.11，再用 `py -3.11 -m venv .venv`。

@@ -1,8 +1,14 @@
-[phases.setup]
-nixPkgs = ["python311"]
+# ★ 唔好喺度自訂 setup / install phases。
+# 之前寫住 `[phases.setup] nixPkgs = ["python311"]` 會**蓋過** Nixpacks 內建嘅 Python provider，
+# 令 image 裡面只有 python、冇 pip → 建置即刻死：
+#     RUN pip install --upgrade pip
+#     /bin/bash: line 1: pip: command not found
+#     Build Failed: ... exit code: 127
+# Nixpacks 內建 provider 本身會裝好 python + pip + venv，並且識得讀 requirements.txt。
+# 呢度只需要兩樣：指定 Python 版本、指定啟動指令。
 
-[phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.11"
 
 [start]
 cmd = "gunicorn -c gunicorn.conf.py main:app"

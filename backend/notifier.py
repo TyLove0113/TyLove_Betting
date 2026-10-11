@@ -25,7 +25,12 @@ def _send(chat_id, text, buttons=None, silent=False):
                           json=payload, timeout=20)
         if r.status_code != 200:
             print("[notifier] send failed", r.status_code, r.text[:200])
-        return {"ok": r.status_code == 200}
+            try:
+                desc = r.json().get("description", "")
+            except ValueError:
+                desc = r.text[:120]
+            return {"ok": False, "reason": f"telegram {r.status_code}: {desc}"}
+        return {"ok": True}
     except requests.RequestException as e:
         print("[notifier] send error", e)
         return {"ok": False, "reason": str(e)[:200]}

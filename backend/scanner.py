@@ -58,8 +58,7 @@ def sync_fixtures(date=None):
 
 
 def refresh_odds(date=None):
-    date = date or today_hk().strftime("%Y-%m-%d")
-    start, end = _day_bounds(date)
+    start, end = _window_bounds(fwd_min=360)
     fixtures = db.q("SELECT * FROM fixtures WHERE kickoff_hk>=? AND kickoff_hk<? ORDER BY kickoff_hk",
                     (start, end))
     if not fixtures:
@@ -78,6 +77,18 @@ def _day_bounds(date_str):
     start = parse_hk(f"{d} 00:00")
     from datetime import timedelta
     return start.strftime("%Y-%m-%d %H:%M"), (start + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
+
+
+def _window_bounds(back_min=90, fwd_min=300, now=None):
+    """滾動時間窗（唔用日曆日）。
+
+    馬會足球日會跨過午夜：用「今日 00:00–24:00」做界，午夜前後就會漏掉
+    凌晨開賽嘅場（掃描變 checked 0、賠率亦唔會更新）。改成以現在為中心嘅窗口。
+    """
+    now = now or now_hk()
+    from datetime import timedelta
+    return ((now - timedelta(minutes=back_min)).strftime("%Y-%m-%d %H:%M"),
+            (now + timedelta(minutes=fwd_min)).strftime("%Y-%m-%d %H:%M"))
 
 
 def _mark_opening():
@@ -137,7 +148,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
     max_minutes = 240 if max_minutes is None else max_minutes
     now = now_hk()
     if fixtures is None:
-        start, end = _day_bounds(now.strftime("%Y-%m-%d"))
+        start, end = _window_bounds(fwd_min=max_minutes + 30)
         fixtures = db.q("""SELECT * FROM fixtures
                            WHERE kickoff_hk>=? AND kickoff_hk<? AND status='scheduled'
                            ORDER BY kickoff_hk""", (start, end))
