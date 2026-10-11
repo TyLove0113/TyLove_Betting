@@ -95,9 +95,17 @@ py cli.py initdb
 py cli.py demo --seed            # 建示範聯賽同今日賽事（有 2 場故意做偏價）
 py cli.py scan --no-push         # 睇會唔會搵到價值
 py cli.py report
+py cli.py log                    # 投注記錄（帳簿）：最新 50 注＋摘要，並寫出 CSV／日誌檔
 py selftest.py                   # 一鍵自測全流程
 py cli.py serve                  # 本機開儀表板 http://localhost:8080
 ```
+
+**投注記錄（帳簿）去邊睇？** ① 本機 `py cli.py log`（亦可以 `--days 7`、`--mode real`）
+② 瀏覽器 `https://<你個app>/ledger.csv` 下載 Excel（中文唔亂碼），或儀表板最底「📒 投注記錄」卡
+③ Telegram `/log` 或 `/log 7`。
+寫出嘅檔喺 `logs/`（跟資料庫同一個資料夾；Railway 上係 `/data/logs/`）：`bets_ledger.csv`（全部注項）、
+`bets_YYYY-MM-DD.csv`（當日）、`YYYY-MM-DD.md`（當日日誌）；每日 23:00（香港時間）自動寫一次，
+`DAYLOG_HOUR` 可改。
 
 `py` 唔靠 PATH，喺任何新終端都一樣得，所以日常就用佢。
 

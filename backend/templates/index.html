@@ -24,6 +24,10 @@
   <div class="card"><h3>今日價值建議</h3><div id="value"></div></div>
   <div class="card"><h3>注項</h3><div id="bets"></div></div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
+  <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
+    <span>📒 投注記錄</span>
+    <a href="/ledger.csv" style="font-size:12px;color:#8b95a5;text-decoration:none">下載 CSV ⬇</a></h3>
+    <div class="muted" id="ledger_sum"></div><div id="ledger"></div></div>
 </div>
 <script>
 const f=n=>n==null?'-':Number(n).toFixed(2);
@@ -55,6 +59,19 @@ async function load(){
   document.getElementById('fixtures').innerHTML= fx.length? `<table><tr><th>開賽</th><th>賽事</th><th>聯賽</th><th>狀態</th></tr>`+
     fx.slice(0,40).map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>
       <td>${x.league||''}</td><td>${x.status}</td></tr>`).join('')+`</table>`:'冇';
+  const lg=await (await fetch('/api/ledger')).json();
+  const st=s=>s.bets?`${s.bets} 注（已結算 ${s.graded}）・投注 $${(s.stake||0).toFixed(0)}・盈虧 <b class="${(s.pnl||0)>=0?'pos':'neg'}">$${(s.pnl||0).toFixed(0)}</b>・ROI ${s.roi_pct==null?'-':(s.roi_pct*100).toFixed(2)+'%'}`:'冇注項';
+  document.getElementById('ledger_sum').innerHTML=`🤖 自動跟注：${st(lg.paper)}<br>✍️ 你實際落注：${st(lg.real)}`;
+  const sl={open:'⏳',won:'✅',lost:'❌',push:'↩️',void:'🚫'};
+  document.getElementById('ledger').innerHTML= lg.rows.length? `<table><tr><th>#</th><th>時間</th><th>賽事</th><th>市場</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th><th>CLV</th></tr>`+
+    lg.rows.slice(0,30).map(x=>{
+      const p=(x.status==='won'||x.status==='lost'||x.status==='push')?((x.payout||0)-(x.stake||0)):null;
+      return `<tr><td>${x.id}</td><td>${(x.kickoff_hk||x.created_at||'').slice(5,16)}</td>
+      <td>${x.home_team||''} vs ${x.away_team||''} <span class="tag">${x.mode==='real'?'✍️':'🤖'}</span></td>
+      <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.odds_taken)}</td>
+      <td>$${f(x.stake)}</td><td>${sl[x.status]||x.status}</td>
+      <td class="${p==null?'':(p>=0?'pos':'neg')}">${p==null?'':(p>0?'+':'')+p.toFixed(0)}</td>
+      <td>${x.clv_pct==null?'-':(x.clv_pct*100).toFixed(1)+'%'}</td></tr>`;}).join('')+`</table>`:'冇注項記錄';
 }
 load(); setInterval(load, 60000);
 </script></body></html>

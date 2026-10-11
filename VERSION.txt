@@ -1,3 +1,12 @@
+# HKJC 足球價值投注系統 v1.2.0
+2026-10-12 v1.2.0 新增「投注記錄（帳簿）」——好似交易日誌咁逐注留底：
+· 新 ledger.py；`py cli.py log [--days N] [--mode paper|real] [--no-file]` 印最新 50 注＋摘要，並寫檔
+· 網頁：`GET /ledger.csv` 下載（UTF-8 BOM，Excel 開中文唔亂碼）、`GET /api/ledger` JSON，
+  儀表板新增「📒 投注記錄」卡（最新 20 注＋摘要）
+· Telegram：`/log [日數]` 睇摘要＋最近 10 注
+· 檔案：`logs/bets_ledger.csv`（全部注項，每次重寫）、`logs/bets_YYYY-MM-DD.csv`（當日）、
+  `logs/YYYY-MM-DD.md`（當日日誌）；每日 23:00（`DAYLOG_HOUR`）自動寫一次
+
 # HKJC 足球價值投注系統 v1.1.5
 2026-10-12 v1.1.5 修儀表板：templates/index.html 意外帶住 Python 外殼（檔頭一行 docstring
 同 `HTML = """`、檔尾 `"""`），令瀏覽器頁面頂部出現 """"Minimal dashboard (mobile friendly)…，

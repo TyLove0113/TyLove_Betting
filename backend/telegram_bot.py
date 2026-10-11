@@ -46,6 +46,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 /roi [日數] － ROI / 命中率 / CLV（例如 /roi 30）
 /report － 今日報告
 /weekly － 本週報告
+/log [日數] － 投注記錄（帳目：逐注＋盈虧＋CLV）
 
 <b>🔧 系統</b>
 /status － 系統同排程狀態
@@ -196,6 +197,11 @@ def dispatch(text):
             lines.append(f"• {r['name']}: {r.get('status')} {r.get('bytes','')} {r.get('error','')}")
         lines.append(f"\nraw 檔：<code>{rep['summary']}</code>")
         return "\n".join(lines), None
+
+    if cmd == "/log":
+        import ledger
+        days = int(args[0]) if args and args[0].isdigit() else None
+        return ledger.telegram_text(days=days), None
 
     if cmd == "/open":
         return journal.open_bets_text(), None

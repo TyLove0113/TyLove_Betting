@@ -83,6 +83,10 @@ def main():
     sub.add_parser("serve")
     sub.add_parser("settings")
     sub.add_parser("env")
+    p_log = sub.add_parser("log")
+    p_log.add_argument("--days", type=int, default=None)
+    p_log.add_argument("--mode", choices=["paper", "real"], default=None)
+    p_log.add_argument("--no-file", action="store_true")
     p_not = sub.add_parser("notify")
     p_not.add_argument("message", nargs="?", default="✅ Telegram 設定成功 — HKJC 足球價值投注系統")
 
@@ -162,6 +166,16 @@ def main():
 
     elif a.cmd == "env":
         print(env_report())
+
+    elif a.cmd == "log":
+        import ledger
+        print(ledger.table_text(ledger.rows(mode=a.mode, days=a.days, limit=50)))
+        print()
+        print(ledger.summary_text(mode=a.mode, days=a.days))
+        if not a.no_file:
+            print("\n已寫出記錄檔：")
+            for path in ledger.write_files(mode=a.mode):
+                print("  " + path)
 
     elif a.cmd == "notify":
         import notifier

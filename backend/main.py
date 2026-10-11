@@ -12,11 +12,12 @@ import threading
 import time
 import traceback
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 
 import config
 import db
 import journal
+import ledger
 import notifier
 import scanner
 import settlement
@@ -72,6 +73,8 @@ def run_due_jobs(now):
     if once("weekly", now.weekday() == config.WEEKLY_REPORT_DOW
             and hour == config.WEEKLY_REPORT_HOUR and minute < 5):
         _job("weekly_report", lambda: journal.weekly_report())
+    if once("daylog", hour == config.DAYLOG_HOUR and minute < 5):
+        _job("daylog", lambda: ledger.write_files())
 
     # 2. odds refresh a few times a day
     for h in parse_csv_ints(config.SYNC_ODDS_HOURS):
@@ -153,6 +156,24 @@ def api_bets():
                    LEFT JOIN fixtures f ON f.match_id=b.match_id
                    ORDER BY b.id DESC LIMIT 100""")
     return jsonify(rows)
+
+
+@app.route("/api/ledger")
+def api_ledger():
+    days = request.args.get("days", type=int)
+    mode = request.args.get("mode") or None
+    return jsonify({"rows": ledger.rows(mode=mode, days=days, limit=500),
+                    "paper": journal.summary(mode="paper", days=days),
+                    "real": journal.summary(mode="real", days=days)})
+
+
+@app.route("/ledger.csv")
+def ledger_csv():
+    days = request.args.get("days", type=int)
+    mode = request.args.get("mode") or None
+    body = ledger.csv_text(ledger.rows(mode=mode, days=days))
+    return Response(body, mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=bets_ledger.csv"})
 
 
 @app.route("/api/fixtures")

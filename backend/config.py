@@ -143,6 +143,8 @@ MAX_BETS_PER_DAY = _env("MAX_BETS_PER_DAY", 8, int)
 # 只為第一次部署驗證用：設 SEED_DEMO_ON_BOOT=1，開機時如果 DB 冇賽程就播種示範資料，
 # 令儀表板／Telegram 即刻有嘢睇。睇完之後建議刪走呢個 Variable。
 SEED_DEMO_ON_BOOT = _env("SEED_DEMO_ON_BOOT", "", str).strip().lower() in ("1", "true", "yes", "on")
+# 每日幾點寫出投注記錄檔（logs/bets_ledger.csv、logs/YYYY-MM-DD.md），香港時間。
+DAYLOG_HOUR = _env("DAYLOG_HOUR", 23, int)
 MAX_DAILY_LOSS_PCT = _env("MAX_DAILY_LOSS_PCT", 5.0, float)    # stop suggesting after -5% day
 MIN_MINUTES_BEFORE_KICKOFF = _env("MIN_MINUTES_BEFORE_KICKOFF", 5, int)
 DEDUPE_MINUTES = _env("DEDUPE_MINUTES", 45, int)               # don't repeat the same pick within this window
