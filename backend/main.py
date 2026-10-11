@@ -179,6 +179,15 @@ def bootstrap():
     _started.set()
     db.init_db()
     settings_store.apply_overrides()
+    if config.SEED_DEMO_ON_BOOT:
+        try:
+            empty = db.q("SELECT COUNT(*) c FROM fixtures", one=True)["c"] == 0
+            if empty:
+                import demo_data
+                print("[boot] SEED_DEMO_ON_BOOT=1 → 播種示範資料（只為驗證部署，睇完可刪呢個 Variable）")
+                demo_data.seed()
+        except Exception as e:                                     # noqa: BLE001
+            print("[boot] demo seed failed", e)
     threading.Thread(target=scheduler_loop, daemon=True, name="scheduler").start()
     try:
         import telegram_bot

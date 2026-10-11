@@ -1,4 +1,10 @@
-# HKJC 足球價值投注系統 v1.1.4
+# HKJC 足球價值投注系統 v1.1.5
+2026-10-12 v1.1.5 修儀表板：templates/index.html 意外帶住 Python 外殼（檔頭一行 docstring
+同 `HTML = """`、檔尾 `"""`），令瀏覽器頁面頂部出現 """"Minimal dashboard (mobile friendly)…，
+頁尾又多一串引號。已剝走外殼，只留真 HTML（實測 / 回應由 <!doctype html> 起到 </html> 止）。
+另新增 SEED_DEMO_ON_BOOT=1：開機時若 DB 冇賽程就播種示範資料，方便第一次部署驗證儀表板／
+Telegram（睇完可刪該 Variable）。版本號改為由 VERSION.txt 讀取，避免程式同文件版本唔一致。
+
 2026-10-11 v1.1.4 修 Railway 建置失敗：nixpacks.toml 原本自訂咗 setup/install phases
 （nixPkgs = ["python311"]），會蓋過 Nixpacks 內建 Python provider，令 image 只有 python 而冇 pip
 → RUN pip install --upgrade pip 出 "pip: command not found"、exit code 127。現改成極簡
