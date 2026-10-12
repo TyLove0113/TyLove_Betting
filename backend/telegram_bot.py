@@ -53,6 +53,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 /sync － 即刻同步賽程
 /settle － 即刻結算
 /probe － 測試馬會網頁端點（會存 raw 檔）
+/check － 自我檢查（token／webhook／收發訊息／排程，一鍵診斷）
 /sim A vs B － 即時試算任何兩隊（唔需要賠率）
 /ratings [隊數] － 球隊強度排名
 /settings － 睇現時參數
@@ -95,6 +96,16 @@ def run_forever():
         return
     _running.set()
     print(f"[bot] polling started（去 Telegram 打 /help 測試；chat id={config.TELEGRAM_CHAT_ID or '未設定'}）")
+    try:
+        info = _api("getWebhookInfo")
+        url = ((info or {}).get("result") or {}).get("url") or ""
+        if url:
+            print(f"[bot] ⚠️ 發現 webhook 指向 {url} —— 佢會截走所有訊息，自動清走…")
+            res = _api("deleteWebhook")
+            print("[bot] deleteWebhook:",
+                  "成功" if (res or {}).get("ok") else (res or {}).get("description"))
+    except Exception as e:                                         # noqa: BLE001
+        print("[bot] webhook 檢查失敗", e)
     while _running.is_set():
         try:
             offset = int(db.get_setting(STATE_KEY, 0) or 0)
@@ -208,6 +219,10 @@ def dispatch(text):
         out = settlement.settle_pending()
         n = sum(x.get("settled", 0) for x in out if isinstance(x, dict))
         return f"🧾 結算完成：處理 {n} 注。", None
+
+    if cmd == "/check":
+        import doctor
+        return doctor.render_text(doctor.report(send_test=False))[:4000], None
 
     if cmd == "/probe":
         rep = hkjc.probe(verbose=False)

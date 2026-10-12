@@ -88,6 +88,9 @@ def main():
     p_log.add_argument("--mode", choices=["paper", "real"], default=None)
     p_log.add_argument("--no-file", action="store_true")
     sub.add_parser("bot")
+    p_doc = sub.add_parser("doctor")
+    p_doc.add_argument("--fix", action="store_true")
+    p_doc.add_argument("--no-send", action="store_true")
     p_not = sub.add_parser("notify")
     p_not.add_argument("message", nargs="?", default="✅ Telegram 設定成功 — HKJC 足球價值投注系統")
 
@@ -177,6 +180,17 @@ def main():
             print("\n已寫出記錄檔：")
             for path in ledger.write_files(mode=a.mode):
                 print("  " + path)
+
+    elif a.cmd == "doctor":
+        import doctor
+        if a.fix:
+            print("自動修正：")
+            for name, ok, detail in doctor.auto_fix():
+                print(f"  {'✅' if ok else '❌'} {name}：{detail}")
+            print()
+        rep = doctor.report(send_test=not a.no_send)
+        print(doctor.render_text(rep))
+        return 0 if all(i["status"] != "fail" for i in rep["items"]) else 1
 
     elif a.cmd == "bot":
         import telegram_bot

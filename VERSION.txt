@@ -1,3 +1,12 @@
+# HKJC 足球價值投注系統 v1.3.0
+2026-10-12 v1.3.0 新增「自我檢查（doctor）」——一鍵診斷，唔需要靠猜：
+· `py cli.py doctor`（加 --fix 會自動清走阻住輪詢嘅 webhook）；Telegram `/check`；
+  儀表板新增「🩺 自我檢查」卡（檢查／自動修正兩粒掣，API：`GET /api/doctor`）
+· 逐項報告：環境、.env 位置、token 格式／有效性（getMe）、webhook、getUpdates 衝突、
+  sendMessage 實測、資料庫讀寫同賽程數、排程最後執行時間，最後有白話總結
+· 新 module `doctor.py`；bot 開機若發現有 webhook 指去其他地方，會自動清走
+· 修儀表板投注記錄摘要欄位名（staked／returned），並為輪詢加「監護」自動重開
+
 # HKJC 足球價值投注系統 v1.2.2
 2026-10-12 v1.2.2 Telegram 排查再加強：輪詢 thread 由一條「監護」thread 包住，死咗會自動重開
 （舊版一死就永遠唔應命令，但排程照跑——所以會出現「收到心跳但 /help 冇反應」）；收到訊息會印

@@ -158,6 +158,19 @@ def api_bets():
     return jsonify(rows)
 
 
+@app.route("/api/doctor")
+def api_doctor():
+    import doctor
+    truthy = ("1", "true", "yes", "on")
+    fixed = []
+    if (request.args.get("fix") or "").lower() in truthy:
+        fixed = [{"action": n, "ok": bool(ok), "detail": d}
+                 for n, ok, d in doctor.auto_fix()]
+    rep = doctor.report(send_test=(request.args.get("send") or "").lower() in truthy)
+    rep["fixed"] = fixed
+    return jsonify(rep)
+
+
 @app.route("/api/ledger")
 def api_ledger():
     days = request.args.get("days", type=int)

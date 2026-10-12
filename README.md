@@ -87,6 +87,8 @@ Cursor 預設終端係 **PowerShell**。你部機嘅情況：**Python 3.11.9 已
 py -3.11 -m pip install -r backend\requirements.txt
 ```
 
+**🩺 一鍵診斷：`py cli.py doctor`**（Telegram 打 `/check`，或儀表板「🩺 自我檢查」卡）—— 逐項話你知 token 有冇效、有冇 webhook 搶走訊息、收／發訊息通唔通、資料庫同排程狀態，最後有白話總結同「點修」。有問題可以加 `--fix` 自動修正。
+
 **★ Telegram 冇反應（`/start`、`/help` 冇回覆）？** bot 只會喺**有程式喺度輪詢**嘅時候收訊息：
 本機 `py cli.py bot`（或 `py cli.py serve`），或者 Railway 開住（Variables 要有 `TELEGRAM_BOT_TOKEN`，
 Deployments log 見到 `[bot] polling started`）。`py cli.py notify` 只係一次性推送，推完就結束。
@@ -108,6 +110,8 @@ py cli.py scan --no-push         # 睇會唔會搵到價值
 py cli.py report
 py cli.py log                    # 投注記錄（帳簿）：最新 50 注＋摘要，並寫出 CSV／日誌檔
 py cli.py bot                    # 只開 Telegram 收訊息（唔開排程；Ctrl+C 停）— 測試 /help 最方便
+py cli.py doctor                 # 🩺 自我檢查：token／webhook／收發訊息／資料庫／排程逐項報告
+py cli.py doctor --fix           # 順手自動修正（例如清走阻住輪詢嘅 webhook）
 py selftest.py                   # 一鍵自測全流程
 py cli.py serve                  # 本機開儀表板 http://localhost:8080
 ```

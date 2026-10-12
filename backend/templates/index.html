@@ -28,6 +28,12 @@
     <span>📒 投注記錄</span>
     <a href="/ledger.csv" style="font-size:12px;color:#8b95a5;text-decoration:none">下載 CSV ⬇</a></h3>
     <div class="muted" id="ledger_sum"></div><div id="ledger"></div></div>
+  <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
+    <span>🩺 自我檢查</span>
+    <span><button id="doc_btn" style="margin-right:6px">檢查</button><button id="doc_fix">自動修正</button></span></h3>
+    <div class="muted" id="doctor">撳「檢查」逐項報告：token 有冇效、webhook 有冇搶訊息、
+      發／收訊息通唔通、資料庫同排程狀態（會發一條測試訊息去 Telegram）。
+      見到有問題就撳「自動修正」。</div></div>
 </div>
 <script>
 const f=n=>n==null?'-':Number(n).toFixed(2);
@@ -60,7 +66,7 @@ async function load(){
     fx.slice(0,40).map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>
       <td>${x.league||''}</td><td>${x.status}</td></tr>`).join('')+`</table>`:'冇';
   const lg=await (await fetch('/api/ledger')).json();
-  const st=s=>s.bets?`${s.bets} 注（已結算 ${s.graded}）・投注 $${(s.stake||0).toFixed(0)}・盈虧 <b class="${(s.pnl||0)>=0?'pos':'neg'}">$${(s.pnl||0).toFixed(0)}</b>・ROI ${s.roi_pct==null?'-':(s.roi_pct*100).toFixed(2)+'%'}`:'冇注項';
+  const st=s=>s.bets?`${s.bets} 注（已結算 ${s.graded}）・投注 $${(s.staked||0).toFixed(0)}・回收 $${(s.returned||0).toFixed(0)}・盈虧 <b class="${(s.pnl||0)>=0?'pos':'neg'}">$${(s.pnl||0).toFixed(0)}</b>・ROI ${s.roi_pct==null?'-':(s.roi_pct*100).toFixed(2)+'%'}`:'冇注項';
   document.getElementById('ledger_sum').innerHTML=`🤖 自動跟注：${st(lg.paper)}<br>✍️ 你實際落注：${st(lg.real)}`;
   const sl={open:'⏳',won:'✅',lost:'❌',push:'↩️',void:'🚫'};
   document.getElementById('ledger').innerHTML= lg.rows.length? `<table><tr><th>#</th><th>時間</th><th>賽事</th><th>市場</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th><th>CLV</th></tr>`+
@@ -73,5 +79,22 @@ async function load(){
       <td class="${p==null?'':(p>=0?'pos':'neg')}">${p==null?'':(p>0?'+':'')+p.toFixed(0)}</td>
       <td>${x.clv_pct==null?'-':(x.clv_pct*100).toFixed(1)+'%'}</td></tr>`;}).join('')+`</table>`:'冇注項記錄';
 }
+const IC={ok:'✅',warn:'⚠️',fail:'❌',skip:'➖'};
+async function runDoctor(fix){
+  const el=document.getElementById('doctor');
+  el.textContent='檢查中…（幾秒）';
+  let j;
+  try{ j=await (await fetch('/api/doctor?send=1'+(fix?'&fix=1':''))).json(); }
+  catch(e){ el.textContent='檢查失敗：'+e; return; }
+  const fixed=(j.fixed||[]).map(f=>`${f.ok?'✅':'❌'} ${f.action}：${f.detail}`).join('<br>');
+  el.innerHTML=(fixed?`<div class="muted" style="margin-bottom:6px">自動修正：<br>${fixed}</div>`:'')+
+    j.items.map(i=>`<div style="margin-bottom:6px"><b>${IC[i.status]||'•'} ${i.title}</b>`
+      +(i.detail?`<div class="muted" style="white-space:pre-wrap">${i.detail}</div>`:'')
+      +((i.fix&&i.status!=='ok')?`<div style="color:#fbbf24">↳ 點修：${i.fix}</div>`:'')+`</div>`).join('')
+    +`<div style="border-top:1px solid #232936;margin-top:8px;padding-top:6px"><b>總結</b>`
+    +(j.verdict||[]).map(v=>`<div style="margin-top:4px">${v}</div>`).join('')+`</div>`;
+}
+document.getElementById('doc_btn').onclick=()=>runDoctor(false);
+document.getElementById('doc_fix').onclick=()=>runDoctor(true);
 load(); setInterval(load, 60000);
 </script></body></html>
