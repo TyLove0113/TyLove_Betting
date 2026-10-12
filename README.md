@@ -92,6 +92,8 @@ py -3.11 -m pip install -r backend\requirements.txt
 **★ Telegram 冇反應（`/start`、`/help` 冇回覆）？** bot 只會喺**有程式喺度輪詢**嘅時候收訊息：
 本機 `py cli.py bot`（或 `py cli.py serve`），或者 Railway 開住（Variables 要有 `TELEGRAM_BOT_TOKEN`，
 Deployments log 見到 `[bot] polling started`）。`py cli.py notify` 只係一次性推送，推完就結束。
+**最後一招（決定性測試）**：只開一邊（關掉 Railway 或關掉本機），然後本機 `py cli.py bot` 再喺 Telegram 打 `/help` —— 本機見到 `[bot] recv /help from chat …` ＝本機收到（問題喺另一邊）；完全冇出現＝你的訊息被另一邊即時收走（多數係你個 trading 程式、舊 service、或者多過 1 個 replica 用緊同一個 bot token）。
+
 **同一個 token 任何時間只可以有一個地方輪詢** —— 本機同 Railway 同時開會互相搶 update（log 出
 `409 Conflict`），請只開一邊。
 

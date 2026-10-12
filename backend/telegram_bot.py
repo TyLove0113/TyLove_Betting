@@ -25,6 +25,7 @@ from scanner import MARKET_LABEL, SEL_LABEL
 
 API = "https://api.telegram.org/bot{token}/{method}"
 _running = threading.Event()
+_fails = {}
 STATE_KEY = "telegram_offset"
 
 HELP = """<b>HKJC 足球價值投注系統</b>
@@ -80,8 +81,12 @@ def _reply(chat_id, text, buttons=None):
                disable_notification=False,
                reply_markup={"inline_keyboard": buttons} if buttons else None)
     if not res or not res.get("ok"):
-        print("[bot] send failed:", (res or {}).get("error_code"),
-              (res or {}).get("description"))
+        _d = (res or {}).get("description") or ""
+        print("[bot] send failed:", (res or {}).get("error_code"), _d)
+        if "parse" in _d.lower():
+            res = _api("sendMessage", chat_id=chat_id, text=text[:4000],
+                       reply_markup={"inline_keyboard": buttons} if buttons else None)
+            print("[bot] HTML 解析失敗，改用純文字重送:", (res or {}).get("ok"))
     return res
 
 
@@ -134,10 +139,16 @@ def run_forever():
                     handle_update(upd)
                     print(f"[bot] handled update {upd.get('update_id')}")
                 except Exception as e:                             # noqa: BLE001
-                    print("[bot] handler error", e)
+                    uid = upd["update_id"]
+                    _fails[uid] = _fails.get(uid, 0) + 1
+                    print(f"[bot] handler error（第 {_fails[uid]} 次）", e)
                     traceback.print_exc()
                     if upd.get("message"):
-                        _reply(upd["message"]["chat"]["id"], f"⚠️ 指令出錯：{notifier.esc(str(e)[:200])}")
+                        _reply(upd["message"]["chat"]["id"],
+                               f"⚠️ 指令出錯：{notifier.esc(str(e)[:200])}")
+                    if _fails[uid] < 3:
+                        db.set_setting(STATE_KEY, uid - 1)
+                        print("[bot] 回退 offset，等 Telegram 重送")
         except Exception as e:                                     # noqa: BLE001
             print("[bot] loop error", e)
             time.sleep(5)
@@ -295,7 +306,7 @@ def dispatch(text):
         try:
             hg, ag = [int(x) for x in score.replace(":", "-").split("-")]
         except ValueError:
-            return "格式：/result <id> <主-客>，例如 /result 3 2-1", None
+            return "格式：/result &lt;id&gt; &lt;主-客&gt;，例如 /result 3 2-1", None
         match_id = _resolve_match(key)
         if not match_id:
             return f"搵唔到賽事/注項 {key}", None

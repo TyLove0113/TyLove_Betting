@@ -145,7 +145,12 @@ def check_updates():
     if res and res.get("ok"):
         n = len(res.get("result") or [])
         return _item("updates", "收訊息（getUpdates）", OK,
-                     f"拎得到更新（今次探測見到 {n} 條）")
+                     f"拎得到更新（今次探測見到 {n} 條；探測唔會消耗你嘅訊息）。"
+                     + ("注意：Telegram 側而家 0 條積壓 —— 如果你啱啱打過 /help，"
+                        "即係嗰啲訊息已經被『另一個程式』即時收走；"
+                        "而你冇見到回覆，代表收走訊息嘅程式冇答你。"
+                        "決定性測試：開住 `py cli.py bot` 再打 /help，睇本機有冇 "
+                        "`[bot] recv /help`。") if n == 0 else "")
     code = (res or {}).get("error_code")
     desc = (res or {}).get("description", "")
     if code == 409:
@@ -255,7 +260,12 @@ def _verdict(items):
         out.append("③ 「發訊息」失敗 —— 多數係你未喺 Telegram 向 bot 打過 /start，"
                    "或者 chat id 抄錯。")
     if not out:
-        out.append("全部正常：收得到、發得到。你打 /help 應該即刻有回應。")
+        out.append("Token／發訊息／收訊息 API 全部通。如果 Telegram 打 /help 仍然冇反應，"
+                   "就係「有另一個地方即時收走你嘅訊息但唔答你」——")
+        out.append("　決定性測試：淨係開一邊（關掉 Railway 或本機任何一邊），"
+                   "然後本機 `py cli.py bot` 打 /help。見到 `[bot] recv /help` = 本機收到；"
+                   "完全冇 = 訊息去咗另一邊（多數係你個 trading 程式／舊 service／多過 1 個 replica "
+                   "用緊同一個 token）。")
         if st.get("db") == WARN:
             out.append("（唯一未打通：馬會賽程／賠率來源 —— 見「資料庫」一項。）")
     return out
