@@ -1,3 +1,14 @@
+# HKJC 足球價值投注系統 v1.2.2
+2026-10-12 v1.2.2 Telegram 排查再加強：輪詢 thread 由一條「監護」thread 包住，死咗會自動重開
+（舊版一死就永遠唔應命令，但排程照跑——所以會出現「收到心跳但 /help 冇反應」）；收到訊息會印
+`[bot] recv <指令> from chat <id>`、處理完印 `[bot] handled update <id>`；回覆失敗會印
+`[bot] send failed: <code> <description>`。開機亦會印 `[bot] thread started`。
+
+# HKJC 足球價值投注系統 v1.2.1
+2026-10-12 v1.2.1 Telegram 診斷：新增 `py cli.py bot`（只開 bot 收訊息、唔開排程，方便測試／
+本機長開）；輪詢出錯會講清楚原因（401 = token 唔對／已 revoke；409 = 同一個 token 有另一個
+地方正在輪詢，本機同 Railway 只可以開一個）；README／手冊加「Telegram 冇反應」排查。
+
 # HKJC 足球價值投注系統 v1.2.0
 2026-10-12 v1.2.0 新增「投注記錄（帳簿）」——好似交易日誌咁逐注留底：
 · 新 ledger.py；`py cli.py log [--days N] [--mode paper|real] [--no-file]` 印最新 50 注＋摘要，並寫檔

@@ -87,6 +87,7 @@ def main():
     p_log.add_argument("--days", type=int, default=None)
     p_log.add_argument("--mode", choices=["paper", "real"], default=None)
     p_log.add_argument("--no-file", action="store_true")
+    sub.add_parser("bot")
     p_not = sub.add_parser("notify")
     p_not.add_argument("message", nargs="?", default="✅ Telegram 設定成功 — HKJC 足球價值投注系統")
 
@@ -176,6 +177,14 @@ def main():
             print("\n已寫出記錄檔：")
             for path in ledger.write_files(mode=a.mode):
                 print("  " + path)
+
+    elif a.cmd == "bot":
+        import telegram_bot
+        if not config.TELEGRAM_BOT_TOKEN:
+            print("未設定 TELEGRAM_BOT_TOKEN。喺 backend\\.env 填好之後用 `py cli.py env` 確認。")
+            return
+        print("開始接收 Telegram 訊息（Ctrl+C 停）。去 Telegram 打 /help 就會有回應。")
+        telegram_bot.run_forever()
 
     elif a.cmd == "notify":
         import notifier

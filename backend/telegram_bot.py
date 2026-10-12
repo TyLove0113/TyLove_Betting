@@ -75,9 +75,13 @@ def _api(method, **payload):
 
 
 def _reply(chat_id, text, buttons=None):
-    return _api("sendMessage", chat_id=chat_id, text=text[:4000], parse_mode="HTML",
-                disable_notification=False,
-                reply_markup={"inline_keyboard": buttons} if buttons else None)
+    res = _api("sendMessage", chat_id=chat_id, text=text[:4000], parse_mode="HTML",
+               disable_notification=False,
+               reply_markup={"inline_keyboard": buttons} if buttons else None)
+    if not res or not res.get("ok"):
+        print("[bot] send failed:", (res or {}).get("error_code"),
+              (res or {}).get("description"))
+    return res
 
 
 def _answer_cb(cb_id, text=""):
@@ -90,19 +94,34 @@ def run_forever():
         print("[bot] no token configured, polling disabled")
         return
     _running.set()
-    print("[bot] polling started")
+    print(f"[bot] polling started（去 Telegram 打 /help 測試；chat id={config.TELEGRAM_CHAT_ID or '未設定'}）")
     while _running.is_set():
         try:
             offset = int(db.get_setting(STATE_KEY, 0) or 0)
             res = _api("getUpdates", offset=offset + 1, timeout=30,
                        allowed_updates=["message", "callback_query"])
             if not res or not res.get("ok"):
+                if res:
+                    desc = (res.get("description") or "")
+                    code = res.get("error_code")
+                    if code == 409 or "terminated by other getUpdates" in desc:
+                        print("[bot] 409 Conflict：同一個 token 有另一個地方正在輪詢 —— "
+                              "本機（py cli.py serve／bot）同 Railway 只可以開一個，請關掉其中一邊。")
+                    elif code == 401:
+                        print("[bot] 401 Unauthorized：token 唔對或者已經 revoke，"
+                              "請去 @BotFather 拎新 token 並更新 TELEGRAM_BOT_TOKEN。")
                 time.sleep(3)
                 continue
             for upd in res.get("result", []):
                 db.set_setting(STATE_KEY, upd["update_id"])
+                msg = upd.get("message") or {}
+                text_in = (msg.get("text") or "").strip()
+                if msg:
+                    print(f"[bot] recv {text_in.split()[0] if text_in else '(非文字)'} "
+                          f"from chat {msg.get('chat', {}).get('id')}")
                 try:
                     handle_update(upd)
+                    print(f"[bot] handled update {upd.get('update_id')}")
                 except Exception as e:                             # noqa: BLE001
                     print("[bot] handler error", e)
                     traceback.print_exc()

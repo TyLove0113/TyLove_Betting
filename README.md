@@ -87,6 +87,17 @@ Cursor 預設終端係 **PowerShell**。你部機嘅情況：**Python 3.11.9 已
 py -3.11 -m pip install -r backend\requirements.txt
 ```
 
+**★ Telegram 冇反應（`/start`、`/help` 冇回覆）？** bot 只會喺**有程式喺度輪詢**嘅時候收訊息：
+本機 `py cli.py bot`（或 `py cli.py serve`），或者 Railway 開住（Variables 要有 `TELEGRAM_BOT_TOKEN`，
+Deployments log 見到 `[bot] polling started`）。`py cli.py notify` 只係一次性推送，推完就結束。
+**同一個 token 任何時間只可以有一個地方輪詢** —— 本機同 Railway 同時開會互相搶 update（log 出
+`409 Conflict`），請只開一邊。
+
+**喺 Railway 邊句 log 睇？** Deployments → View Logs：開機要有 `[bot] thread started` 同
+`[bot] polling started`；你喺 Telegram 打字時要出現 `[bot] recv /help from chat …` 同
+`[bot] handled update …`。只有心跳／報告但冇 `recv` → 更新冇送到（多數係有第二個 poller）；
+有 `recv` 但冇回覆 → log 會有 `[bot] send failed: …` 講原因。v1.2.2 起輪詢 thread 死咗會自動重開。
+
 **第二步：跑（喺 `backend` 資料夾內，即見到 `cli.py` 嗰層）**
 
 ```powershell
@@ -96,6 +107,7 @@ py cli.py demo --seed            # 建示範聯賽同今日賽事（有 2 場故
 py cli.py scan --no-push         # 睇會唔會搵到價值
 py cli.py report
 py cli.py log                    # 投注記錄（帳簿）：最新 50 注＋摘要，並寫出 CSV／日誌檔
+py cli.py bot                    # 只開 Telegram 收訊息（唔開排程；Ctrl+C 停）— 測試 /help 最方便
 py selftest.py                   # 一鍵自測全流程
 py cli.py serve                  # 本機開儀表板 http://localhost:8080
 ```

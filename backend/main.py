@@ -212,7 +212,21 @@ def bootstrap():
     threading.Thread(target=scheduler_loop, daemon=True, name="scheduler").start()
     try:
         import telegram_bot
-        threading.Thread(target=telegram_bot.run_forever, daemon=True, name="telegram").start()
+
+        def _telegram_supervisor():
+            """輪詢唔可以死咗冇人知：一死就自動重開（排程係另一條 thread，唔受影響）。"""
+            import traceback
+            while True:
+                try:
+                    telegram_bot.run_forever()
+                    print("[bot] polling loop ended —— 5 秒後重開")
+                except Exception as e:                             # noqa: BLE001
+                    print("[bot] polling crashed:", e)
+                    traceback.print_exc()
+                time.sleep(5)
+
+        print("[bot] thread started（有 token 就會長開輪詢）")
+        threading.Thread(target=_telegram_supervisor, daemon=True, name="telegram").start()
     except Exception as e:                                         # noqa: BLE001
         print("[boot] telegram thread failed", e)
 
