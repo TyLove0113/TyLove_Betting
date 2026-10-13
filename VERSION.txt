@@ -1,3 +1,10 @@
+# HKJC 足球價值投注系統 v1.3.2
+2026-10-12 v1.3.2 ★ 修好「Telegram 收到訊息但永遠冇回覆」嘅真正根源（我嘅 bug）：
+_reply() 在冇按鈕時會送出 "reply_markup": null，Telegram 唔接受 null，回 400
+"object expected as reply markup" → 每一條 bot 回覆都被拒收，而舊版只靜靜寫 log，
+所以手機完全冇反應（但 notifier 推送正常，因為佢冇按鈕時唔會加呢個欄位）。
+修法：_api() 送出前剔走所有 null 欄位；任何 400 亦會退化重試（去掉按鈕 → 純文字）。
+
 # HKJC 足球價值投注系統 v1.3.1
 2026-10-12 v1.3.1 Telegram 加固（針對「收到心跳／報告但 /help 冇反應」）：
 · 回覆若被 Telegram 以 400 拒收（HTML 標籤問題），自動改用純文字重送並寫 log —— 唔會再靜音

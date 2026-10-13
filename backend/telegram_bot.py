@@ -69,6 +69,8 @@ def _api(method, **payload):
         return None
     url = API.format(token=config.TELEGRAM_BOT_TOKEN, method=method)
     try:
+        # ★ Telegram 唔接受 null（例如 reply_markup=None 會回 400 object expected as reply markup）
+        payload = {k: v for k, v in payload.items() if v is not None}
         r = requests.post(url, json=payload, timeout=35)
         return r.json()
     except requests.RequestException as e:
@@ -83,10 +85,14 @@ def _reply(chat_id, text, buttons=None):
     if not res or not res.get("ok"):
         _d = (res or {}).get("description") or ""
         print("[bot] send failed:", (res or {}).get("error_code"), _d)
-        if "parse" in _d.lower():
-            res = _api("sendMessage", chat_id=chat_id, text=text[:4000],
-                       reply_markup={"inline_keyboard": buttons} if buttons else None)
-            print("[bot] HTML 解析失敗，改用純文字重送:", (res or {}).get("ok"))
+        if (res or {}).get("error_code") == 400:
+            for label, extra in (("去掉按鈕重送", {"parse_mode": "HTML"}),
+                                 ("改用純文字重送", {})):
+                res = _api("sendMessage", chat_id=chat_id, text=text[:4000], **extra)
+                print(f"[bot] {label}:", (res or {}).get("ok"),
+                      (res or {}).get("description") or "")
+                if res and res.get("ok"):
+                    break
     return res
 
 
