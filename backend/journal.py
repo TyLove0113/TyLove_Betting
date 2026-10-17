@@ -177,10 +177,11 @@ def equity_series(mode="paper", limit=200):
     return out[-limit:]
 
 
-def value_bets_today():
+def value_bets_today(order="ev"):
+    ob = "f.kickoff_hk ASC" if order == "time" else "v.ev_pct DESC"
     start, end = day_bounds_hk()
-    return db.q("""SELECT v.*, f.home_team, f.away_team, f.kickoff_hk, f.league
+    return db.q(f"""SELECT v.*, f.home_team, f.away_team, f.kickoff_hk, f.league
                    FROM value_bets v LEFT JOIN fixtures f ON f.match_id=v.match_id
                    WHERE v.created_at>=? AND v.created_at<?
-                   ORDER BY v.ev_pct DESC""",
+                   ORDER BY {ob}""",
                 (start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")))

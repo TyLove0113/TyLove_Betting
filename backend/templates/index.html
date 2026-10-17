@@ -22,7 +22,7 @@
     <div class="muted" id="cfg" style="margin-top:8px"></div>
   </div>
   <div class="card"><h3>今日價值建議</h3><div id="value"></div></div>
-  <div class="card"><h3>注項</h3><div id="bets"></div></div>
+  <div class="card"><h3>落注記錄（虛擬 / 真實分開）</h3><div id="bets"></div></div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
   <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
     <span>📒 投注記錄</span>
@@ -55,12 +55,21 @@ async function load(){
       <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.hkjc_odds)}</td>
       <td class="val">${(x.ev_pct*100).toFixed(1)}%</td><td>$${f(x.stake)}</td></tr>`).join('')+`</table>`:'冇';
   const b=await (await fetch('/api/bets')).json();
-  document.getElementById('bets').innerHTML= b.length? `<table><tr><th>#</th><th>賽事</th><th>選項</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th><th>CLV</th></tr>`+
-    b.map(x=>`<tr><td>${x.id}</td><td>${x.home_team||''} vs ${x.away_team||''}</td>
-      <td>${x.market} ${x.selection} <span class="tag">${x.mode}</span></td><td>${f(x.odds_taken)}</td>
+  const grp=m=>b.filter(x=>(x.mode||'paper')===m);
+  const stat=rows=>{const st=rows.reduce((a,x)=>a+(x.stake||0),0);
+    const se=rows.filter(x=>x.payout!=null);
+    const pnl=se.reduce((a,x)=>a+((x.payout||0)-(x.stake||0)),0);
+    return `注數 ${rows.length}・總注碼 $${f(st)}・已結算 ${se.length}・盈虧 <b class="${pnl>=0?'pos':'neg'}">$${f(pnl)}</b>`;};
+  const tbl=rows=>rows.length?`<table><tr><th>#</th><th>開賽</th><th>賽事</th><th>盤</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th></tr>`+
+    rows.map(x=>{const pnl=(x.payout==null)?'':('$'+f((x.payout||0)-(x.stake||0)));
+      return `<tr><td>${x.id}</td><td>${(x.kickoff_hk||'').slice(5)}</td>
+      <td>${x.home_team||''} vs ${x.away_team||''}</td>
+      <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.odds_taken)}</td>
       <td>$${f(x.stake)}</td><td>${x.status}</td>
-      <td class="${x.payout!=null&&x.payout>0?'pos':''}">${x.payout==null?'':('$'+f(x.payout-x.stake))}</td>
-      <td>${x.clv_pct==null?'-':(x.clv_pct*100).toFixed(1)+'%'}</td></tr>`).join('')+`</table>`:'冇';
+      <td class="${pnl&&!pnl.startsWith('$-')?'pos':''}">${pnl}</td></tr>`;}).join('')+`</table>`:'冇記錄';
+  document.getElementById('bets').innerHTML=
+    `<div style="margin-bottom:10px"><b>🧪 虛擬（系統自動跟注，唔係真錢）</b><div class="muted">${stat(grp('paper'))}</div>${tbl(grp('paper'))}</div>`+
+    `<div style="border-top:1px solid #232936;padding-top:8px"><b>💰 真實（你自己落注）</b><div class="muted">${stat(grp('real'))}</div>${tbl(grp('real'))}</div>`;
   const fx=await (await fetch('/api/fixtures')).json();
   document.getElementById('fixtures').innerHTML= fx.length? `<table><tr><th>開賽</th><th>賽事</th><th>聯賽</th><th>狀態</th></tr>`+
     fx.slice(0,40).map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>

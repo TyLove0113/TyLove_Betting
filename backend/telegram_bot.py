@@ -220,7 +220,7 @@ def dispatch(text):
         return _cmd_fixtures(), None
 
     if cmd == "/value":
-        return _cmd_value(), None
+        return _cmd_value("time" if "time" in text.lower().split() else "ev")
 
     if cmd == "/scan":
         s = scanner.scan()
@@ -357,15 +357,18 @@ def _cmd_status():
     scans = db.last_job("scan")
     sync = db.last_job("sync_fixtures")
     odds = db.last_job("refresh_odds")
-    j = journal.summary(mode="paper")
+    jp = journal.summary(mode="paper")
+    jr = journal.summary(mode="real")
     out = [f"🟢 <b>系統狀態</b> v{s['version']} · 香港時間 {now_hk().strftime('%Y-%m-%d %H:%M')}",
            f"市場：{','.join(s['markets'])} · EV 門檻 {s['ev_threshold']*100:.1f}% · "
            f"注碼模式 {s['staking_mode']} · 自動跟注 {'開' if s['auto_follow'] else '關'}",
            f"上次同步賽程：{sync['ts'] if sync else '未跑'}（{sync['status'] if sync else '-'}）",
            f"上次抓賠率：{odds['ts'] if odds else '未跑'}（{odds['detail'][:60] if odds else '-'}）",
            f"上次掃描：{scans['ts'] if scans else '未跑'}",
-           f"自動跟注：{j['bets']} 注 · ROI "
-           f"{(j['roi_pct']*100 if j['roi_pct'] is not None else 0):+.2f}% · 盈虧 ${j['pnl']:+.0f}",
+           f"🧪 虛擬（自動跟注）：{jp['bets']} 注 · ROI "
+           f"{(jp['roi_pct']*100 if jp['roi_pct'] is not None else 0):+.2f}% · 盈虧 ${jp['pnl']:+.0f}",
+           f"💰 真實（你落嘅）：{jr['bets']} 注 · ROI "
+           f"{(jr['roi_pct']*100 if jr['roi_pct'] is not None else 0):+.2f}% · 盈虧 ${jr['pnl']:+.0f}",
            f"Telegram：{'已設定' if s['telegram'] else '未設定'} · DB：{s['db_path']}"]
     return "\n".join(out)
 
@@ -386,11 +389,11 @@ def _cmd_fixtures():
     return "\n".join(out), None
 
 
-def _cmd_value():
-    rows = journal.value_bets_today()
+def _cmd_value(order="ev"):
+    rows = journal.value_bets_today(order)
     if not rows:
         return "今日暫時冇價值投注。用 /scan 即刻掃一次。", None
-    out = ["💎 <b>今日價值清單</b>"]
+    out = [f"💎 <b>今日價值清單</b>（{'按開賽時間' if order == 'time' else '按 EV 由高至低'}）"]
     for r in rows[:15]:
         out.append(f"#{r['id']} {fmt_hk(parse_hk(r['kickoff_hk']))} "
                    f"{notifier.esc(r['home_team'])} vs {notifier.esc(r['away_team'])}\n"
