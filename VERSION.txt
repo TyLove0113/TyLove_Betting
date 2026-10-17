@@ -1,3 +1,14 @@
+# HKJC 足球價值投注系統 v1.4.0
+2026-10-17 v1.4.0 ★ 馬會真數據打通（賽程＋賠率，唔再係空）：
+· backend/hkjc.py 改寫：直接打馬會前端用嘅 GraphQL（info.cld.hkjc.com/graphql/base-get/）
+  allMatchList = 賽程／聯賽／開賽時間／有咩盤口；ESmatchList = 逐場賠率＋賽果
+· 主客和 HAD、入球大細 HIL（有 2.5／3.5 等 line）→ 內部市場 HAD / TTG
+· 賽果用 runningResult.homeScore/awayScore（結算可自動）
+· make_match_id 改用 sha1（原本用 hash() 每次開機都唔同，會令賽程重複）
+· 新增 backend/hkjc_queries.py：馬會前端 query 原文（白名單驗證，唔可以改）
+· probe() 改為真端點測試，raw 檔存 data/probe/
+實測：80 場賽程、43 場有賠率、370 條賠率（HAD 3 條 + TTG 各 line 2 條），掃描出 52 個價值注項。
+
 # HKJC 足球價值投注系統 v1.3.2
 2026-10-12 v1.3.2 ★ 修好「Telegram 收到訊息但永遠冇回覆」嘅真正根源（我嘅 bug）：
 _reply() 在冇按鈕時會送出 "reply_markup": null，Telegram 唔接受 null，回 400

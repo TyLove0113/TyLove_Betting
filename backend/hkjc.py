@@ -46,401 +46,197 @@ SESSION.headers.update({
     "Referer": "https://bet.hkjc.com/",
 })
 
-# ------------------------------------------------------------------ endpoints
-GRAPHQL = config.HKJC_GRAPHQL_URL
-ODDS_PAGE = "https://bet.hkjc.com/football/odds/"
-SCHEDULE_PAGE = "https://bet.hkjc.com/football/schedule/"
+import gzip
+import hashlib
 
-# candidate GraphQL queries: names taken from what the site's own bundle asks for.
-# They are tried in order; the first one that answers with usable data wins.
-GRAPHQL_QUERIES = {
-    "footballSchedule": """query { footballSchedule { matchId kickOffTime leagueName
-        homeTeamName awayTeamName { } } }""",
-    "oddsAllOdds": "query { oddsAllOdds { matchId } }",
-}
+import hkjc_queries as Q
 
-LEGACY_JSON = [
-    ("odds_allodds", "https://bet.hkjc.com/football/getJSON.aspx?jsontype=odds_allodds.aspx&pageno=1"),
-    ("matches", "https://bet.hkjc.com/football/getJSON.aspx?jsontype=matches.aspx?date={date}"),
-]
+API = "https://info.cld.hkjc.com/graphql/base-get/"
+HDR = {"Content-Type": "application/json",
+       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+       "Origin": "https://bet.hkjc.com", "Referer": "https://bet.hkjc.com/football/"}
+ST = {"PREEVENT": "scheduled", "KICKEDOFF": "live", "FIRSTHALF": "live", "HALFTIME": "live",
+      "SECONDHALF": "live", "RESULT": "finished", "FINISHED": "finished",
+      "MATCHVOIDED": "cancelled", "ABANDONED": "cancelled"}
+POOL = {"HAD": "HAD", "HIL": "TTG"}          # HIL = 入球大細（有 2.5 之類嘅 line）
 
 
-def _get(url, **kw):
+def _call(query, variables=None, tries=2):
     last = None
-    for attempt in range(1, config.HTTP_RETRIES + 1):
+    for i in range(tries + 1):
         try:
-            r = SESSION.get(url, timeout=config.HTTP_TIMEOUT, allow_redirects=True, **kw)
-            if r.status_code == 200 and r.content:
-                time.sleep(config.HTTP_SLEEP)
-                return r
-            last = f"HTTP {r.status_code}"
-        except requests.RequestException as e:
-            last = str(e)[:200]
-        time.sleep(config.HTTP_SLEEP * attempt)
-    raise RuntimeError(f"GET failed {url} -> {last}")
+            r = requests.post(API, json={"query": query, "variables": variables or {}},
+                              headers=HDR, timeout=45)
+            raw = r.content
+            if raw[:2] == b"\x1f\x8b":
+                raw = gzip.decompress(raw)
+            data = json.loads(raw.decode("utf-8"))
+            if data.get("errors") and not data.get("data"):
+                raise RuntimeError(str(data["errors"])[:180])
+            return data.get("data") or {}
+        except Exception as e:                       # noqa: BLE001
+            last = e
+            time.sleep(1.0 + i)
+    raise RuntimeError(f"馬會 API 失敗：{last}")
 
 
-def _post_json(url, payload):
-    last = None
-    for attempt in range(1, config.HTTP_RETRIES + 1):
-        try:
-            r = SESSION.post(url, json=payload, timeout=config.HTTP_TIMEOUT)
-            if r.status_code == 200 and r.content:
-                time.sleep(config.HTTP_SLEEP)
-                return r
-            last = f"HTTP {r.status_code}"
-        except requests.RequestException as e:
-            last = str(e)[:200]
-        time.sleep(config.HTTP_SLEEP * attempt)
-    raise RuntimeError(f"POST failed {url} -> {last}")
-
-
-# --------------------------------------------------------------------- probe
-def probe(verbose=True):
-    """Hit every candidate endpoint once and store the raw payload."""
-    os.makedirs(config.PROBE_DIR, exist_ok=True)
-    stamp = now_hk().strftime("%Y%m%d_%H%M%S")
-    report = []
-
-    targets = [("graphql_home", "post", GRAPHQL, {"query": "{ __typename }"})]
-    for name, q in GRAPHQL_QUERIES.items():
-        targets.append((f"graphql_{name}", "post", GRAPHQL, {"query": q}))
-    for name, url in LEGACY_JSON:
-        targets.append((name, "get", url.format(date=now_hk().strftime("%Y-%m-%d")), None))
-    targets.append(("odds_page_html", "get", ODDS_PAGE, None))
-    targets.append(("schedule_page_html", "get", SCHEDULE_PAGE, None))
-
-    for name, kind, url, payload in targets:
-        entry = {"name": name, "url": url, "kind": kind}
-        try:
-            r = _post_json(url, payload) if kind == "post" else _get(url)
-            body = r.text
-            path = os.path.join(config.PROBE_DIR, f"{stamp}_{name}.txt")
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(f"# {url}\n# status {r.status_code}\n# headers {dict(r.headers)}\n\n{body[:400000]}")
-            entry.update({"status": r.status_code, "bytes": len(body), "file": path,
-                          "preview": body[:220].replace("\n", " ")})
-        except Exception as e:                                    # noqa: BLE001
-            entry.update({"status": "ERR", "error": str(e)[:200]})
-        report.append(entry)
-        if verbose:
-            print(f"[probe] {name:24s} {entry.get('status')} {entry.get('bytes', '')} {entry.get('error', '')}")
-    summary_path = os.path.join(config.PROBE_DIR, f"{stamp}_summary.json")
-    with open(summary_path, "w", encoding="utf-8") as fh:
-        json.dump(report, fh, ensure_ascii=False, indent=2)
-    db.log_job("hkjc_probe", "ok", summary_path)
-    return {"report": report, "summary": summary_path}
-
-
-# ------------------------------------------------------------------ parsing
-FIELD_ALIASES = {
-    "match_id": ["matchid", "id", "matchno", "eventid", "fixtureid"],
-    "kickoff": ["kickoff", "kickofftime", "starttime", "matchdate", "datetime", "time", "kickOffTime"],
-    "league": ["league", "leaguename", "tournament", "competition", "division"],
-    "home_team": ["hometeam", "hometeamname", "home", "teamh", "homename", "homeTeamName"],
-    "away_team": ["awayteam", "awayteamname", "away", "teama", "awayname", "awayTeamName"],
-    "home_score": ["homescore", "scoreh", "homegoals", "ft_home"],
-    "away_score": ["awayscore", "scorea", "awaygoals", "ft_away"],
-    "markets": ["markets", "marketlist", "bettypes", "marketcodes"],
-    "odds": ["odds", "odd", "price", "rate"],
-}
-
-TEAM_NAME_RE = re.compile(r"[\u4e00-\u9fff]{2,}|[A-Za-z][A-Za-z .'\-]{2,}")
-ODDS_KEY_RE = re.compile(r"(had|hda|hadodds|home|draw|away|homewin|drawodds|awaywin)", re.I)
-TTG_KEYS = {"over": ["over", "o", "above", "大"], "under": ["under", "u", "below", "細"]}
-
-
-def _iter_dicts(obj, depth=0):
-    if depth > 12:
-        return
-    if isinstance(obj, dict):
-        yield obj
-        for v in obj.values():
-            yield from _iter_dicts(v, depth + 1)
-    elif isinstance(obj, list):
-        for v in obj:
-            yield from _iter_dicts(v, depth + 1)
-
-
-def _lookup(d, aliases):
-    for k, v in d.items():
-        if str(k).lower() in aliases and v not in (None, "", [], {}):
-            return v
-    return None
+def _hk(iso):
+    return (iso or "")[:16].replace("T", " ")
 
 
 def _num(v):
     try:
-        f = float(str(v).strip())
+        return float(v)
     except (TypeError, ValueError):
         return None
-    return f
 
 
-def _paginate(payload):
-    """Unwrap the many wrappers HKJC payloads use ({data:{...}} , {json:[...]}, ...)."""
-    if isinstance(payload, dict):
-        for key in ("data", "json", "result", "results", "matches", "content"):
-            if key in payload:
-                return _paginate(payload[key])
-    return payload
 
-
-def parse_fixtures(payload, date_hint=None):
-    """Find fixture records inside any payload. Returns list of normalised dicts."""
-    payload = _paginate(payload)
-    out, seen = [], set()
-    for d in _iter_dicts(payload):
-        home = _lookup(d, FIELD_ALIASES["home_team"])
-        away = _lookup(d, FIELD_ALIASES["away_team"])
-        if not home or not away or not isinstance(home, (str, int)) or not isinstance(away, (str, int)):
-            continue
-        home, away = str(home).strip(), str(away).strip()
-        if len(home) < 2 or len(away) < 2 or home == away:
-            continue
-        ko = parse_hk(_lookup(d, FIELD_ALIASES["kickoff"]))
-        if ko is None and date_hint:
-            ko = parse_hk(date_hint)
-        mid = _lookup(d, FIELD_ALIASES["match_id"])
-        key = (home, away, ko.strftime("%Y-%m-%d %H:%M") if ko else "", str(mid or ""))
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append({
-            "source_id": str(mid) if mid else None,
-            "league": str(_lookup(d, FIELD_ALIASES["league"]) or "").strip(),
-            "kickoff_hk": ko.strftime("%Y-%m-%d %H:%M") if ko else None,
-            "home_team": home, "away_team": away,
-            "home_score": _num(_lookup(d, FIELD_ALIASES["home_score"])),
-            "away_score": _num(_lookup(d, FIELD_ALIASES["away_score"])),
-            "markets": _flatten_markets(_lookup(d, FIELD_ALIASES["markets"])),
-        })
-    return out
-
-
-def _flatten_markets(v):
-    if not v:
-        return ""
-    if isinstance(v, str):
-        return v
-    if isinstance(v, list):
-        parts = []
-        for x in v:
-            if isinstance(x, str):
-                parts.append(x)
-            elif isinstance(x, dict):
-                code = _lookup(x, ["code", "marketcode", "bettype", "name", "type"])
-                if code:
-                    parts.append(str(code))
-        return ",".join(parts)
-    if isinstance(v, dict):
-        return ",".join(str(k) for k in v.keys())
-    return str(v)
-
-
-def parse_odds(payload, match_id=None):
-    """Find 1X2 / total-goal odds. Returns rows ready for db.save_odds_batch."""
-    payload = _paginate(payload)
-    rows = []
-    for d in _iter_dicts(payload):
-        mid = match_id or _lookup(d, FIELD_ALIASES["match_id"])
-        if not mid:
-            continue
-        mid = str(mid)
-        # --- head-to-head / 主客和
-        had = d.get("had") or d.get("hda") or d.get("hadOdds")
-        pairs = []
-        if isinstance(had, dict):
-            pairs = [(had.get("h") or had.get("home"), "H"),
-                     (had.get("d") or had.get("draw"), "D"),
-                     (had.get("a") or had.get("away"), "A")]
-        if not any(_num(p[0]) for p in pairs):
-            for k, v in d.items():
-                if ODDS_KEY_RE.search(str(k)):
-                    kl = str(k).lower()
-                    sel = "H" if "home" in kl else "D" if "draw" in kl else "A"
-                    pairs.append((v, sel))
-        for val, sel in pairs:
-            f = _num(val)
-            if f and 1.0 < f < 200:
-                rows.append({"match_id": mid, "market": "HAD", "line": "", "selection": sel, "odds": f})
-        # --- totals / 入球大細
-        tot = d.get("ttg") or d.get("totals") or d.get("overUnder") or d.get("ttgOdds")
-        if isinstance(tot, dict):
-            line = str(tot.get("line") or tot.get("goals") or tot.get("handicap") or "2.5")
-            for sel, aliases in TTG_KEYS.items():
-                val = _lookup(tot, aliases)
-                f = _num(val)
-                if f and 1.0 < f < 200:
-                    rows.append({"match_id": mid, "market": "TTG", "line": line,
-                                 "selection": sel.upper(), "odds": f})
-    return rows
-
-
-def parse_scores(payload, match_id=None):
-    """Finished matches -> results rows."""
-    payload = _paginate(payload)
-    out = []
-    for d in _iter_dicts(payload):
-        hg = _num(_lookup(d, FIELD_ALIASES["home_score"]))
-        ag = _num(_lookup(d, FIELD_ALIASES["away_score"]))
-        mid = match_id or _lookup(d, FIELD_ALIASES["match_id"])
-        if mid and hg is not None and ag is not None:
-            out.append({"match_id": str(mid), "home_goals": int(hg), "away_goals": int(ag),
-                        "total": int(hg + ag)})
-    return out
-
-
-def parse_html(payload_html):
-    """Last-resort parsing of a rendered odds page."""
-    soup = BeautifulSoup(payload_html, "lxml")
-    fixtures, odds_rows = [], []
-    for table in soup.find_all("table"):
-        headers = [th.get_text(" ", strip=True) for th in table.find_all("th")]
-        if not headers:
-            continue
-        idx = {h: i for i, h in enumerate(headers)}
-        for tr in table.find_all("tr"):
-            cells = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
-            if len(cells) < 3:
-                continue
-            row = dict(zip(headers, cells))
-            home = next((v for k, v in row.items() if any(a in k.lower() for a in ("home", "主隊", "主"))), None)
-            away = next((v for k, v in row.items() if any(a in k.lower() for a in ("away", "客隊", "客"))), None)
-            if home and away:
-                fixtures.append({"home_team": home, "away_team": away, "kickoff_hk": None,
-                                 "league": "", "source_id": None, "markets": ""})
-    return fixtures, odds_rows
-
-
-# ------------------------------------------------------------------ fetchers
 def fetch_schedule(date=None):
-    """Return (fixtures, note). Never raises - failure is reported, not fatal."""
-    date = date or now_hk().strftime("%Y-%m-%d")
-    attempts = []
+    """賽程。date='YYYY-MM-DD' 只留嗰日（香港時間）開賽嘅場。"""
+    data = _call(Q.MATCH_LIST)
+    out = []
+    for m in data.get("matches") or []:
+        ko = _hk(m.get("kickOffTime"))
+        if len(ko) < 16 or (date and ko[:10] != date):
+            continue
+        pools = (m.get("poolInfo") or {}).get("normalPools") or []
+        markets = [v for k, v in POOL.items() if k in pools]
+        out.append({"source_id": str(m.get("id")), "league": (m.get("tournament") or {}).get("name_ch") or "",
+                    "kickoff_hk": ko, "home_team": (m.get("homeTeam") or {}).get("name_ch") or "",
+                    "away_team": (m.get("awayTeam") or {}).get("name_ch") or "",
+                    "markets": ",".join(markets), "status": ST.get((m.get("status") or "").upper(), "scheduled")})
+    return out, f"hkjc {len(out)} 場"
 
-    # 1. primary odds/schedule page for the day (HTML app shell + embedded JSON)
-    for name, url in (("odds_page", f"{ODDS_PAGE}?date={date}"), ("odds_page_plain", ODDS_PAGE),
-                      ("schedule_page", f"{SCHEDULE_PAGE}?date={date}")):
-        try:
-            r = _get(url)
-            body = r.text
-            fixtures = []
-            embedded = re.findall(r"<script[^>]*>(.*?)</script>", body, re.S)
-            for blob in embedded:
-                blob = blob.strip()
-                if blob.startswith("{") or blob.startswith("["):
-                    try:
-                        fixtures += parse_fixtures(json.loads(blob), date_hint=date)
-                    except json.JSONDecodeError:
-                        pass
-            if not fixtures:
-                fixtures, _ = parse_html(body)
-            if fixtures:
-                return fixtures, f"{name}:{len(fixtures)}"
-            attempts.append(f"{name}:HTTP {r.status_code}/no fixtures({len(body)}B)")
-        except Exception as e:                                    # noqa: BLE001
-            attempts.append(f"{name}:{str(e)[:80]}")
 
-    # 2. legacy JSON paths
-    for name, url in LEGACY_JSON:
-        try:
-            r = _get(url.format(date=date))
-            fixtures = parse_fixtures(json.loads(r.text), date_hint=date)
-            if fixtures:
-                return fixtures, f"{name}:{len(fixtures)}"
-            attempts.append(f"{name}:no fixtures")
-        except Exception as e:                                    # noqa: BLE001
-            attempts.append(f"{name}:{str(e)[:80]}")
+def _sel(market, c):
+    s = (c.get("str") or "").strip().upper()
+    names = " ".join((x.get("name_ch") or "") for x in (c.get("selections") or []))
+    if market == "HAD":
+        if s in ("H", "D", "A"):
+            return s
+        return {"主": "H", "和": "D", "客": "A"}.get(names[:1])
+    if "大" in names or s in ("O", "OVER"):
+        return "OVER"
+    if "細" in names or s in ("U", "UNDER"):
+        return "UNDER"
+    return None
 
-    # 3. GraphQL
-    for name, query in GRAPHQL_QUERIES.items():
-        try:
-            r = _post_json(GRAPHQL, {"query": query})
-            fixtures = parse_fixtures(r.json(), date_hint=date)
-            if fixtures:
-                return fixtures, f"graphql_{name}:{len(fixtures)}"
-            attempts.append(f"graphql_{name}:no fixtures")
-        except Exception as e:                                    # noqa: BLE001
-            attempts.append(f"graphql_{name}:{str(e)[:80]}")
 
-    return [], " | ".join(attempts)
+def _ids(match_ids):
+    ids = [str(x) for x in (match_ids or [])]
+    if not ids:
+        return {}
+    ph = ",".join("?" * len(ids))
+    rows = db.q(f"SELECT match_id, source_id FROM fixtures WHERE match_id IN ({ph})", tuple(ids))
+    return {str(r["source_id"]): r["match_id"] for r in rows if r["source_id"]}
+
+
+def _fetch(chunk, types):
+    return _call(Q.ODDS, {"startIndex": 0, "endIndex": len(chunk), "startDate": None, "endDate": None,
+                          "matchIds": chunk, "tournIds": None, "fbOddsTypes": types,
+                          "fbOddsTypesM": ["HAD"], "inplayOnly": False, "featuredMatchesOnly": False,
+                          "frontEndIds": None, "earlySettlementOnly": False, "showAllMatch": False})
+
 
 
 def fetch_odds(match_ids=None):
-    """Odds for the matches we have fixtures for. Returns (rows, note)."""
-    rows, attempts = [], []
-    match_ids = match_ids or []
-    mid_set = {str(m) for m in match_ids}
-
-    for name, url in (("odds_allodds", LEGACY_JSON[0][1]), ("odds_page", ODDS_PAGE)):
-        try:
-            r = _get(url)
-            payload = r.json() if url.endswith(".aspx") else _embedded_json_or_html(r.text)
-            found = parse_odds(payload)
-            found = [x for x in found if not mid_set or x["match_id"] in mid_set]
-            if found:
-                rows += found
-                attempts.append(f"{name}:{len(found)}")
-                if mid_set and {x['match_id'] for x in found} >= mid_set:
-                    break
-            else:
-                attempts.append(f"{name}:0 rows")
-        except Exception as e:                                    # noqa: BLE001
-            attempts.append(f"{name}:{str(e)[:80]}")
-
-    if not rows:
-        for name, query in GRAPHQL_QUERIES.items():
-            if "odd" not in name.lower():
+    """逐場賠率。回 (rows, note)；rows 直接餵 db.save_odds_batch。"""
+    src = _ids(match_ids)
+    if not src:
+        return [], "冇 source_id（先 /sync 賽程）"
+    keys, rows, pools = list(src), [], 0
+    for i in range(0, len(keys), 25):
+        data = _fetch(keys[i:i + 25], ["HAD", "HIL"])
+        for m in data.get("matches") or []:
+            mid = src.get(str(m.get("id")))
+            if not mid:
                 continue
-            try:
-                r = _post_json(GRAPHQL, {"query": query})
-                found = parse_odds(r.json())
-                found = [x for x in found if not mid_set or x["match_id"] in mid_set]
-                if found:
-                    rows += found
-                    attempts.append(f"graphql_{name}:{len(found)}")
-            except Exception as e:                                # noqa: BLE001
-                attempts.append(f"graphql_{name}:{str(e)[:80]}")
-
-    return rows, " | ".join(attempts)
-
-
-def _embedded_json_or_html(text):
-    if text.lstrip().startswith(("{", "[")):
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-    for blob in re.findall(r"<script[^>]*>(.*?)</script>", text, re.S):
-        blob = blob.strip()
-        if blob.startswith(("{", "[")):
-            try:
-                return json.loads(blob)
-            except json.JSONDecodeError:
-                continue
-    return {"html": text}
+            for p in m.get("foPools") or []:
+                market = POOL.get(p.get("oddsType"))
+                if not market:
+                    continue
+                pools += 1
+                for ln in p.get("lines") or []:
+                    line = (ln.get("condition") or "").strip()
+                    for c in ln.get("combinations") or []:
+                        sel, odds = _sel(market, c), _num(c.get("currentOdds"))
+                        if not sel or not odds or odds <= 1:
+                            continue
+                        rows.append({"match_id": mid, "market": market,
+                                     "line": "" if market == "HAD" else line,
+                                     "selection": sel, "odds": odds, "source": "hkjc"})
+    return rows, f"hkjc {len(src)} 場 / {pools} 個盤 / {len(rows)} 條賠率"
 
 
 def fetch_results(date=None):
-    """Finished matches for a date. Returns (rows, note)."""
-    date = date or now_hk().strftime("%Y-%m-%d")
-    attempts = []
-    for name, url in (("results_json", "https://bet.hkjc.com/football/getJSON.aspx?jsontype=results.aspx?date={date}"),
-                      ("results_page", f"https://bet.hkjc.com/football/results/?date={date}")):
+    """賽果：用 runningResult 嘅 homeScore / awayScore。"""
+    src = _ids([r["match_id"] for r in db.q(
+        "SELECT match_id FROM fixtures WHERE kickoff_hk < ? ORDER BY kickoff_hk DESC LIMIT 40",
+        (now_hk().strftime("%Y-%m-%d %H:%M"),))])
+    if not src:
+        return [], "冇已開賽嘅賽程"
+    out, keys = [], list(src)
+    for i in range(0, len(keys), 25):
+        data = _fetch(keys[i:i + 25], ["HAD"])
+        for m in data.get("matches") or []:
+            if ST.get((m.get("status") or "").upper()) != "finished":
+                continue
+            rr = m.get("runningResult") or {}
+            hg, ag = _num(rr.get("homeScore")), _num(rr.get("awayScore"))
+            if hg is None or ag is None:
+                continue
+            out.append({"match_id": src[str(m["id"])], "home_goals": int(hg), "away_goals": int(ag)})
+    return out, f"hkjc {len(out)} 場有賽果"
+
+
+
+def probe(verbose=True):
+    """跑一次真馬會端點，存 raw 檔＋回報（/probe 用）。"""
+    os.makedirs(config.PROBE_DIR, exist_ok=True)
+    stamp = now_hk().strftime("%Y%m%d_%H%M%S")
+    report = []
+
+    def step(name, fn):
         try:
-            r = _get(url.format(date=date))
-            payload = _embedded_json_or_html(r.text)
-            found = parse_scores(payload)
-            if found:
-                return found, f"{name}:{len(found)}"
-            attempts.append(f"{name}:0")
-        except Exception as e:                                    # noqa: BLE001
-            attempts.append(f"{name}:{str(e)[:80]}")
-    return [], " | ".join(attempts)
+            report.append(dict(name=name, status="ok", **fn()))
+        except Exception as e:                                     # noqa: BLE001
+            report.append({"name": name, "status": "ERR", "error": str(e)[:180]})
+        if verbose:
+            r = report[-1]
+            print(f"[probe] {r['name']:6s} {r['status']} {r.get('note', '')} {r.get('error', '')}")
+
+    def sched():
+        fx, note = fetch_schedule(None)
+        p = os.path.join(config.PROBE_DIR, f"{stamp}_schedule.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(fx[:60], fh, ensure_ascii=False, indent=2)
+        return {"bytes": os.path.getsize(p), "note": note, "file": p}
+
+    def odds():
+        ids = [r["match_id"] for r in db.q("SELECT match_id FROM fixtures ORDER BY kickoff_hk LIMIT 3")]
+        rows, note = fetch_odds(ids)
+        p = os.path.join(config.PROBE_DIR, f"{stamp}_odds.json")
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(rows, fh, ensure_ascii=False, indent=2)
+        return {"bytes": os.path.getsize(p), "note": note, "file": p}
+
+    step("賽程", sched)
+    step("賠率", odds)
+    summary = os.path.join(config.PROBE_DIR, f"{stamp}_summary.json")
+    with open(summary, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, ensure_ascii=False, indent=2)
+    db.log_job("hkjc_probe", "ok", summary)
+    return {"report": report, "summary": summary}
 
 
-# ------------------------------------------------------- manual input fallback
+def make_match_id(league, kickoff_hk, home, away):
+    raw = f"{league}|{kickoff_hk}|{home}|{away}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+
+# ------------------------------------------------- manual input fallback
 def parse_manual_odds(text):
     """Parse a hand-typed odds line.
 
@@ -499,8 +295,3 @@ def _find_fixture(home, away):
         if home.lower() in r["home_team"].lower() and away.lower() in r["away_team"].lower():
             return r
     return None
-
-
-def make_match_id(league, kickoff_hk, home, away):
-    raw = f"{league}|{kickoff_hk}|{home}|{away}"
-    return str(abs(hash(raw)))[:16]
