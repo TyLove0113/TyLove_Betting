@@ -90,7 +90,12 @@ def run_due_jobs(now):
     if minute % 5 == 0:
         _job("scan", lambda: scanner.scan())
 
-    # 5. odds movement watch every 15 minutes
+    # 5. live scores for matches with open bets (every minute)
+    if minute % 1 == 0:
+        import live
+        _job("live", live.poll)
+
+    # 6. odds movement watch every 15 minutes
     if minute % 15 == 0:
         _job("odds_watch", scanner.odds_move_watch)
 
@@ -155,6 +160,15 @@ def api_bets():
     rows = db.q("""SELECT b.*, f.home_team, f.away_team, f.kickoff_hk FROM bets b
                    LEFT JOIN fixtures f ON f.match_id=b.match_id
                    ORDER BY b.id DESC LIMIT 100""")
+    try:
+        import live
+        sc = {r["match_id"]: r for r in live.board([])}
+        for r in rows:
+            x = sc.get(r["match_id"]) or {}
+            r["live_status"] = x.get("live_status") or ""
+            r["home_score"], r["away_score"] = x.get("home_score"), x.get("away_score")
+    except Exception:
+        pass
     return jsonify(rows)
 
 

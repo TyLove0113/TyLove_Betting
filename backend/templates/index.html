@@ -22,7 +22,7 @@
     <div class="muted" id="cfg" style="margin-top:8px"></div>
   </div>
   <div class="card"><h3>今日價值建議</h3><div id="value"></div></div>
-  <div class="card"><h3>落注記錄（虛擬 / 真實分開）</h3><div id="bets"></div></div>
+  <div class="card"><h3>落注記錄（虛擬 / 真實分開）</h3><div id="bets"></div><div class="muted" style="margin-top:6px;line-height:1.7">盤口說明：<b>主客和</b> = 全場賽果，H 主勝（左邊嗰隊）／D 和／A 客勝（右邊嗰隊）；<b>入球大細 3.5 細</b> = 兩隊總入球 0–3 球，<b>大</b> = 4 球或以上；4.5 細 = 0–4 球、2.5 細 = 0–2 球。</div></div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
   <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
     <span>📒 投注記錄</span>
@@ -37,6 +37,9 @@
 </div>
 <script>
 const f=n=>n==null?'-':Number(n).toFixed(2);
+const ML={HAD:'主客和',TTG:'入球大細'},SL={H:'主勝',D:'和',A:'客勝',OVER:'大',UNDER:'細'};
+const mk=x=>`${ML[x.market]||x.market}${x.line?' '+x.line:''} · ${SL[x.selection]||x.selection}`;
+const sc=x=>x.home_score==null?'-':`${x.live_status?x.live_status+' ':''}${x.home_score}-${x.away_score}`;
 async function load(){
   const s=await (await fetch('/api/status')).json();
   const p=s.paper,r=s.real;
@@ -52,7 +55,7 @@ async function load(){
   const v=await (await fetch('/api/value')).json();
   document.getElementById('value').innerHTML= v.length? `<table><tr><th>時間</th><th>賽事</th><th>盤</th><th>賠率</th><th>EV</th><th>注碼</th></tr>`+
     v.map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>
-      <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.hkjc_odds)}</td>
+      <td>${mk(x)}</td><td>${f(x.hkjc_odds)}</td>
       <td class="val">${(x.ev_pct*100).toFixed(1)}%</td><td>$${f(x.stake)}</td></tr>`).join('')+`</table>`:'冇';
   const b=await (await fetch('/api/bets')).json();
   const grp=m=>b.filter(x=>(x.mode||'paper')===m);
@@ -60,11 +63,11 @@ async function load(){
     const se=rows.filter(x=>x.payout!=null);
     const pnl=se.reduce((a,x)=>a+((x.payout||0)-(x.stake||0)),0);
     return `注數 ${rows.length}・總注碼 $${f(st)}・已結算 ${se.length}・盈虧 <b class="${pnl>=0?'pos':'neg'}">$${f(pnl)}</b>`;};
-  const tbl=rows=>rows.length?`<table><tr><th>#</th><th>開賽</th><th>賽事</th><th>盤</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th></tr>`+
+  const tbl=rows=>rows.length?`<table><tr><th>#</th><th>開賽</th><th>賽事</th><th>比分</th><th>盤</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th></tr>`+
     rows.map(x=>{const pnl=(x.payout==null)?'':('$'+f((x.payout||0)-(x.stake||0)));
       return `<tr><td>${x.id}</td><td>${(x.kickoff_hk||'').slice(5)}</td>
       <td>${x.home_team||''} vs ${x.away_team||''}</td>
-      <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.odds_taken)}</td>
+      <td>${sc(x)}</td><td>${mk(x)}</td><td>${f(x.odds_taken)}</td>
       <td>$${f(x.stake)}</td><td>${x.status}</td>
       <td class="${pnl&&!pnl.startsWith('$-')?'pos':''}">${pnl}</td></tr>`;}).join('')+`</table>`:'冇記錄';
   document.getElementById('bets').innerHTML=
@@ -83,7 +86,7 @@ async function load(){
       const p=(x.status==='won'||x.status==='lost'||x.status==='push')?((x.payout||0)-(x.stake||0)):null;
       return `<tr><td>${x.id}</td><td>${(x.kickoff_hk||x.created_at||'').slice(5,16)}</td>
       <td>${x.home_team||''} vs ${x.away_team||''} <span class="tag">${x.mode==='real'?'✍️':'🤖'}</span></td>
-      <td>${x.market}${x.line?' '+x.line:''} ${x.selection}</td><td>${f(x.odds_taken)}</td>
+      <td>${mk(x)}</td><td>${f(x.odds_taken)}</td>
       <td>$${f(x.stake)}</td><td>${sl[x.status]||x.status}</td>
       <td class="${p==null?'':(p>=0?'pos':'neg')}">${p==null?'':(p>0?'+':'')+p.toFixed(0)}</td>
       <td>${x.clv_pct==null?'-':(x.clv_pct*100).toFixed(1)+'%'}</td></tr>`;}).join('')+`</table>`:'冇注項記錄';

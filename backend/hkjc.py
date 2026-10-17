@@ -295,3 +295,21 @@ def _find_fixture(home, away):
         if home.lower() in r["home_team"].lower() and away.lower() in r["away_team"].lower():
             return r
     return None
+
+
+def fetch_live(match_ids=None):
+    """即時比數／狀態（馬會 runningResult.homeScore/awayScore）。"""
+    src = _ids(match_ids)
+    if not src:
+        return []
+    keys, out = list(src), []
+    for i in range(0, len(keys), 25):
+        data = _fetch(keys[i:i + 25], ["HAD"])
+        for m in data.get("matches") or []:
+            mid = src.get(str(m.get("id")))
+            if not mid:
+                continue
+            rr = m.get("runningResult") or {}
+            out.append({"match_id": mid, "status": (m.get("status") or "").upper(),
+                        "home_score": rr.get("homeScore"), "away_score": rr.get("awayScore")})
+    return out

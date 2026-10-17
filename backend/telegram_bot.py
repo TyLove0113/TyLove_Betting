@@ -256,6 +256,9 @@ def dispatch(text):
 
     if cmd == "/open":
         return journal.open_bets_text(), None
+    if cmd == "/live":
+        import live
+        return live.text(), None
 
     if cmd == "/roi":
         days = int(args[0]) if args and args[0].isdigit() else None

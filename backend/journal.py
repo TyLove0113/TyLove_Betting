@@ -156,13 +156,34 @@ def open_bets_text(mode=None, limit=15):
     rows = db.q(sql, tuple(args))
     if not rows:
         return "冇未結算注項。"
+    try:
+        import live
+        scores = {r["match_id"]: r for r in live.board([])}
+    except Exception:
+        scores = {}
     out = ["⏳ <b>未結算</b>"]
     for r in rows:
-        out.append(f"#{r['id']} {fmt_hk(parse_hk(r['kickoff_hk']))} {r['home_team']} vs {r['away_team']} "
+        s = scores.get(r["match_id"]) or {}
+        sc = ""
+        if s.get("home_score") is not None and s.get("away_score") is not None:
+            sc = f" · <b>{s['live_status']} {s['home_score']}-{s['away_score']}</b>"
+        elif s.get("live_status"):
+            sc = f" · {s['live_status']}"
+        out.append(f"#{r['id']} {fmt_hk(parse_hk(r['kickoff_hk']))} {r['home_team']} vs {r['away_team']}"
+                   f"{sc} "
                    f"{MARKET_LABEL.get(r['market'], r['market'])}"
                    f"{' ' + str(r['line']) if r['line'] else ''} {SEL_LABEL.get(r['selection'], r['selection'])} "
                    f"@{r['odds_taken']:.2f} ${r['stake']:.0f} [{r['mode']}]")
     return "\n".join(out)
+
+
+def bet_line(r):
+    """一注嘅中文描述（Telegram／網頁共用）。"""
+    return (f"{MARKET_LABEL.get(r['market'], r['market'])}"
+            f"{' ' + str(r['line']) if r.get('line') else ''} "
+            f"{SEL_LABEL.get(r['selection'], r['selection'])} "
+            f"@{float(r.get('odds_taken') or r.get('odds') or 0):.2f} "
+            f"${float(r.get('stake') or 0):.0f}")
 
 
 def equity_series(mode="paper", limit=200):

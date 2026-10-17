@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 
 def _version_from_file():
