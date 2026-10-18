@@ -36,8 +36,8 @@ def _into_history(fixture, hg, ag, source):
            hg, ag, source))
 
 
-def fetch_results_from_source(date=None):
-    rows, note = hkjc.fetch_results(date)
+def fetch_results_from_source(date=None, days_back=3):
+    rows, note = hkjc.fetch_results(date, days_back=days_back)
     saved = 0
     for r in rows:
         if db.q("SELECT 1 FROM results WHERE match_id=?", (r["match_id"],), one=True):
@@ -74,13 +74,31 @@ def settle_match(match_id):
 
 
 def _grade(bet, hg, ag, total):
-    market, sel, stake, odds = bet["market"], bet["selection"], bet["stake"] or 0, bet["odds_taken"]
+    market, sel, stake = bet["market"], bet["selection"], bet["stake"] or 0
+    odds = bet["odds_taken"]
+    if not odds:                       # 冇記錄賠率就退注（唔好計爆）
+        return "void", stake
     if market == "HAD":
         outcome = "H" if hg > ag else ("D" if hg == ag else "A")
         win = (sel == outcome)
     elif market == "TTG":
+        raw = str(bet.get("line") or "")
+        if "/" in raw:                       # 2.5/3.0 之類：拆兩個半球，各佔一半注碼
+            a_, b_ = [float(x) for x in raw.split("/")[:2]]
+            pay = 0.0
+            for ln in (a_, b_):
+                half = stake / 2.0
+                if total > ln:
+                    win_half = (sel == "OVER")
+                elif total == ln:
+                    pay += half                # push，退返半注
+                    continue
+                else:
+                    win_half = (sel == "UNDER")
+                pay += half * odds if win_half else 0.0
+            return ("won" if pay > stake else "lost" if pay < stake else "push"), round(pay, 2)
         try:
-            line = float(bet["line"])
+            line = float(raw)
         except (TypeError, ValueError):
             return "void", stake
         over = total > line
@@ -107,8 +125,8 @@ def _closing_odds(match_id, market, line, selection):
 def settle_pending(days_back=2):
     """Catch up on any fixture that has finished but has no result yet."""
     rows = db.q("""SELECT DISTINCT b.match_id FROM bets b
-                   LEFT JOIN results r ON r.match_id=b.match_id
-                   WHERE b.status='open' AND r.match_id IS NULL""")
+                   JOIN results r ON r.match_id=b.match_id
+                   WHERE b.status='open'""")
     out = []
     for r in rows:
         out.append(settle_match(r["match_id"]))

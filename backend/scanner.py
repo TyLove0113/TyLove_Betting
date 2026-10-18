@@ -155,6 +155,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
 
     checked, picked, booked = 0, [], []
     can_bet, why = staking.risk_check("paper")
+    auto_ok, auto_why = can_bet, why
     recent = _recent_keys()
     open_paper = _open_paper_keys()
 
@@ -202,18 +203,22 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                "reason": why, "at": now.strftime("%Y-%m-%d %H:%M")}
     db.log_job("scan", "ok", str(summary))
     if push and picked:
-        notifier.push(_format_picks(picked, booked, summary))
+        notifier.push(_format_picks(picked, booked, summary, open_paper, auto_ok, auto_why))
     return {"summary": summary, "picks": picked, "booked": booked}
 
 
-def _format_picks(picks, booked, summary):
-    booked_ids = {b["row"]["match_id"] for b in booked}
+def _format_picks(picks, booked, summary, open_keys=None, auto_ok=True, auto_why=""):
+    booked_ids = {(b["row"]["match_id"], b["row"]["market"], b["row"]["line"], b["row"]["selection"])
+                  for b in booked}
+    open_keys = open_keys or set()
     lines = [f"💎 <b>價值投注</b>（{summary['at']}）",
              f"睇 {summary['checked']} 場 · 命中 {summary['picked']} 個價值", ""]
     for r in sorted(picks, key=lambda x: -x["ev_pct"])[:12]:
         f = r["fixture"]
         ko = to_hk(parse_hk(f["kickoff_hk"]))
-        tag = "🎯 已自動跟注" if f["match_id"] in booked_ids else "👀 只提示"
+        k = (f["match_id"], r["market"], r["line"], r["selection"])
+        tag = ("🎯 新跟注" if k in booked_ids else
+               "✅ 已跟注" if k in open_keys else "👀 只提示")
         lines.append(
             f"{tag}\n<b>{notifier.esc(f['home_team'])} vs {notifier.esc(f['away_team'])}</b>"
             f"（{f['league']}）\n"
@@ -222,5 +227,10 @@ def _format_picks(picks, booked, summary):
             f"模型 {r['model_p']*100:.1f}% ／ 公平賠率 {r['fair_odds']:.2f} ／ 馬會 {r['hkjc_odds']:.2f}\n"
             f"EV <b>{r['ev_pct']*100:+.1f}%</b> · 建議注碼 ${r['stake']:.0f}")
     if not booked:
-        lines.append("\n（未有自動跟注：check risk 或 AUTO_FOLLOW）")
+        if not config.AUTO_FOLLOW:
+            lines.append("\n（AUTO_FOLLOW 關咗 → 以上只提示；打 /settings 可以開返）")
+        elif not auto_ok:
+            lines.append(f"\n（未有新跟注：{auto_why or '風險限制'}）")
+        else:
+            lines.append("\n（以上注項之前已經跟咗，今次冇新注）")
     return "\n".join(lines)

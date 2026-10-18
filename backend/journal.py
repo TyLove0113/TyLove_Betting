@@ -100,16 +100,17 @@ def weekly_report(push=True):
 def daily_settle(push=True):
     """Settle anything that has a result, then push what changed."""
     import settlement
+    got = settlement.fetch_results_from_source()
     out = settlement.settle_pending()
-    graded = sum(x.get("settled", 0) for x in out if isinstance(x, dict))
+    from datetime import timedelta
+    since = (now_hk() - timedelta(minutes=45)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = db.q("""SELECT b.*, f.home_team, f.away_team FROM bets b
+                   LEFT JOIN fixtures f ON f.match_id=b.match_id
+                   WHERE b.settled_at>=? AND b.status IN ('won','lost','push')""", (since,))
+    graded = len(rows)
     if graded and push:
         import notifier
-        from datetime import timedelta
-        since = (now_hk() - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
-        rows = db.q("""SELECT b.*, f.home_team, f.away_team FROM bets b
-                       LEFT JOIN fixtures f ON f.match_id=b.match_id
-                       WHERE b.settled_at>=? AND b.status IN ('won','lost','push')""", (since,))
-        lines = [f"🧾 <b>結算</b>（{len(rows)} 注）"]
+        lines = [f"🧾 <b>結算</b>（{graded} 注）"]
         pnl = 0.0
         for r in rows:
             d = (r["payout"] or 0) - (r["stake"] or 0)

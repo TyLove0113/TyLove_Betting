@@ -169,26 +169,77 @@ def fetch_odds(match_ids=None):
     return rows, f"hkjc {len(src)} 場 / {pools} 個盤 / {len(rows)} 條賠率"
 
 
-def fetch_results(date=None):
-    """賽果：用 runningResult 嘅 homeScore / awayScore。"""
+def fetch_results(date=None, days_back=3):
+    """賽果：先睇即時 runningResult，再逐日用 matchResults 補（跑完之後仍然查得到）。"""
+    from datetime import timedelta
+    out, seen = [], set()
     src = _ids([r["match_id"] for r in db.q(
-        "SELECT match_id FROM fixtures WHERE kickoff_hk < ? ORDER BY kickoff_hk DESC LIMIT 40",
+        "SELECT match_id FROM fixtures WHERE kickoff_hk < ? ORDER BY kickoff_hk DESC LIMIT 60",
         (now_hk().strftime("%Y-%m-%d %H:%M"),))])
-    if not src:
-        return [], "冇已開賽嘅賽程"
-    out, keys = [], list(src)
+    keys = list(src)
     for i in range(0, len(keys), 25):
         data = _fetch(keys[i:i + 25], ["HAD"])
         for m in data.get("matches") or []:
-            if ST.get((m.get("status") or "").upper()) != "finished":
+            if (m.get("status") or "").upper() not in ("FINISHED", "RESULT", "INPLAYMATCHENDED"):
                 continue
             rr = m.get("runningResult") or {}
             hg, ag = _num(rr.get("homeScore")), _num(rr.get("awayScore"))
             if hg is None or ag is None:
                 continue
-            out.append({"match_id": src[str(m["id"])], "home_goals": int(hg), "away_goals": int(ag)})
+            mid = src[str(m["id"])]
+            out.append({"match_id": mid, "home_goals": int(hg), "away_goals": int(ag)})
+            seen.add(mid)
+    base = parse_hk(date + " 00:00") if date else now_hk()
+    for k in range(days_back + 1):
+        day = (base - timedelta(days=k)).strftime("%Y-%m-%d")
+        start = 0
+        for _ in range(25):                     # 每頁最多 20 場，逐頁抓
+            try:
+                data = _call(Q.RESULTS, {"startDate": day, "endDate": day,
+                                         "startIndex": start, "endIndex": start + 20,
+                                         "teamId": None})
+            except Exception:                                      # noqa: BLE001
+                break
+            total = (data.get("matchNumByDate") or {}).get("total") or 0
+            batch = data.get("matches") or []
+            for m in batch:
+                mid = _match_id_for(m)
+                if not mid or mid in seen:
+                    continue
+                sc = _final_score(m.get("results") or [])
+                if not sc:
+                    continue
+                out.append({"match_id": mid, "home_goals": sc[0], "away_goals": sc[1]})
+                seen.add(mid)
+            start += 20
+            if not batch or start >= total:
+                break
     return out, f"hkjc {len(out)} 場有賽果"
 
+
+def _match_id_for(m):
+    sid = str(m.get("id") or "")
+    r = db.q("SELECT match_id FROM fixtures WHERE source_id=?", (sid,), one=True)
+    if r:
+        return r["match_id"]
+    ko = _hk(m.get("kickOffTime"))
+    if not ko:
+        return None
+    return make_match_id((m.get("tournament") or {}).get("name_ch") or "", ko,
+                         (m.get("homeTeam") or {}).get("name_ch") or "",
+                         (m.get("awayTeam") or {}).get("name_ch") or "")
+
+
+def _final_score(results):
+    """resultType=1 係入球，stage 最大嗰個就係全場比數。"""
+    goals = [x for x in results if x.get("resultType") == 1]
+    if not goals:
+        return None
+    last = max(goals, key=lambda x: ((x.get("stageId") or 0), (x.get("sequence") or 0)))
+    hg, ag = last.get("homeResult"), last.get("awayResult")
+    if hg is None or ag is None or int(hg) < 0 or int(ag) < 0:
+        return None
+    return int(hg), int(ag)
 
 
 def probe(verbose=True):
