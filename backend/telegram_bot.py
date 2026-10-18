@@ -233,9 +233,14 @@ def dispatch(text):
         return f"🔄 賽程 {s['saved']} 場（{s['note']}）\n賠率 {o['saved']} 條（{o['note']}）", None
 
     if cmd == "/settle":
+        before = db.q("SELECT COUNT(*) c FROM bets WHERE status='open'", one=True)["c"]
+        got = settlement.fetch_results_from_source()
         out = settlement.settle_pending()
         n = sum(x.get("settled", 0) for x in out if isinstance(x, dict))
-        return f"🧾 結算完成：處理 {n} 注。", None
+        after = db.q("SELECT COUNT(*) c FROM bets WHERE status='open'", one=True)["c"]
+        n = max(n, before - after)
+        return (f"🧾 <b>結算</b>\n賽果：{got.get('note') or '—'}\n"
+                f"未結算：{before} → {after}\n今次結算 {n} 注"), None
 
     if cmd == "/check":
         import doctor

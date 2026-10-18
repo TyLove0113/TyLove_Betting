@@ -225,9 +225,18 @@ def _match_id_for(m):
     ko = _hk(m.get("kickOffTime"))
     if not ko:
         return None
-    return make_match_id((m.get("tournament") or {}).get("name_ch") or "", ko,
-                         (m.get("homeTeam") or {}).get("name_ch") or "",
-                         (m.get("awayTeam") or {}).get("name_ch") or "")
+    home = (m.get("homeTeam") or {}).get("name_ch") or ""
+    away = (m.get("awayTeam") or {}).get("name_ch") or ""
+    # 舊版（v1.3 之前）賽程可能冇 source_id，用隊名＋日期對返
+    r = db.q("""SELECT match_id FROM fixtures
+                WHERE home_team=? AND away_team=? AND substr(kickoff_hk,1,10)=?
+                ORDER BY length(match_id) LIMIT 1""", (home, away, ko[:10]), one=True)
+    if r:
+        if sid:
+            db.ex("UPDATE fixtures SET source_id=? WHERE match_id=? AND (source_id IS NULL OR source_id='')",
+                  (sid, r["match_id"]))
+        return r["match_id"]
+    return make_match_id((m.get("tournament") or {}).get("name_ch") or "", ko, home, away)
 
 
 def _final_score(results):
