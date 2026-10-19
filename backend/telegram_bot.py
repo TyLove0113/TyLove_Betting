@@ -197,6 +197,10 @@ def _handle_callback(cb):
             _answer_cb(cb["id"], "搵唔到呢個建議")
             return
         bet_id = staking.record_bet(vb, mode="real", stake=stake, note="confirmed via telegram")
+        if bet_id is None:
+            _answer_cb(cb["id"], "呢個注項之前已經記錄過")
+            _reply(chat_id, "⚠️ 呢個注項之前已經記錄過，唔會重複落注。")
+            return
         _answer_cb(cb["id"], "已記錄真實注項")
         _reply(chat_id, f"✅ 已記錄 <b>真實</b> 注項 #{bet_id}：${stake:.0f} @ {vb['hkjc_odds']:.2f}")
     elif parts[0] == "skip":
@@ -294,8 +298,19 @@ def dispatch(text):
     if cmd == "/setodds":
         return _cmd_setodds(text), None
 
+    if cmd == "/bet" and len(args) < 2:
+        return _cmd_bet_list()
+
     if cmd == "/bet" and len(args) >= 2:
         vb_id, stake = args[0].lstrip("#"), args[1]
+        if not vb_id.isdigit():                      # 用隊名：「/bet 艾費哈 10」
+            k = vb_id.lower()
+            for row in journal.value_bets_today():
+                fx = db.q("SELECT home_team, away_team FROM fixtures WHERE match_id=?",
+                          (row["match_id"],), one=True) or {}
+                if k in (fx.get("home_team") or "").lower() or k in (fx.get("away_team") or "").lower():
+                    vb_id = str(row["id"])
+                    break
         odds = None
         if len(args) >= 3 and args[2].startswith("@"):
             odds = args[2][1:]
@@ -308,6 +323,8 @@ def dispatch(text):
             return "注碼要係數字", None
         bet_id = staking.record_bet(vb, mode="real", stake=stake,
                                     odds=float(odds) if odds else None, note="typed via telegram")
+        if bet_id is None:
+            return "⚠️ 呢個注項之前已經記錄過，唔會重複落注。", None
         f = db.q("SELECT * FROM fixtures WHERE match_id=?", (vb["match_id"],), one=True) or {}
         return (f"✅ 已記錄真實注項 #{bet_id}\n{f.get('home_team','')} vs {f.get('away_team','')} "
                 f"{MARKET_LABEL.get(vb['market'])}{' ' + str(vb['line']) if vb['line'] else ''} "
@@ -408,8 +425,33 @@ def _cmd_value(order="ev"):
                    f"　{MARKET_LABEL.get(r['market'])}{' ' + str(r['line']) if r['line'] else ''} "
                    f"{SEL_LABEL.get(r['selection'], r['selection'])} @ {r['hkjc_odds']:.2f} "
                    f"（模型 {r['model_p']*100:.1f}% / EV {r['ev_pct']*100:+.1f}% / ${r['stake']:.0f}）")
-    return "\n".join(out), None
+    btns = [[{"text": f"💰 #{r['id']} 落 ${r['stake']:.0f}",
+              "callback_data": f"take:{r['id']}:{r['stake']:.0f}"}] for r in rows[:5]]
+    out += ["", "睇法：EV 正＝有價值；公平賠率 ＜ 馬會賠率 先值得買。落注後撳按鈕記錄真實注。"]
+    return "\n".join(out), btns
 
+
+
+def _cmd_bet_list():
+    rows = journal.value_bets_today("time")
+    if not rows:
+        return "今日暫時冇價值注項。用 /scan 即刻掃一次。", None
+    lines = ["💰 <b>記錄你嘅真實注項</b>",
+             "撳下面按鈕直接記錄；或打 /bet &lt;編號&gt; &lt;金額&gt;（例：/bet 3 10）", ""]
+    btns = []
+    for r in rows[:8]:
+        fx = db.q("SELECT home_team, away_team FROM fixtures WHERE match_id=?",
+                  (r["match_id"],), one=True) or {}
+        lines.append(f"#{r['id']} {notifier.esc(fx.get('home_team', ''))} vs "
+                     f"{notifier.esc(fx.get('away_team', ''))}\n"
+                     f"　{MARKET_LABEL.get(r['market'], r['market'])}"
+                     f"{' ' + str(r['line']) if r['line'] else ''} "
+                     f"{SEL_LABEL.get(r['selection'], r['selection'])} @ {r['hkjc_odds']:.2f} · "
+                     f"建議 ${r['stake']:.0f} · EV {r['ev_pct'] * 100:+.1f}%")
+        btns.append([{"text": f"💰 #{r['id']} 落 ${r['stake']:.0f}",
+                      "callback_data": f"take:{r['id']}:{r['stake']:.0f}"}])
+    lines += ["", "睇法：EV 正＝有價值；公平賠率 ＜ 馬會賠率 先值得買；建議注碼＝跟注金額。"]
+    return "\n".join(lines), btns
 
 def _cmd_odds(keyword):
     rows = db.q("""SELECT * FROM fixtures WHERE lower(home_team) LIKE lower(?)

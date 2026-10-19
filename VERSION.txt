@@ -1,3 +1,9 @@
+# HKJC 足球價值投注系統 v1.5.2
+- /bet（唔加參數）＝列出今日注項＋「💰 落 $X」一撳記錄真實注
+- /bet <隊名> <金額>：唔記得編號都可以用隊名記錄（例：/bet 艾費哈 10）
+- /value 同 /scan 訊息加一撳記錄按鈕＋睇法說明（EV／公平賠率／建議注碼）
+- 標籤分清：🎯 系統已跟（虛擬）／✅ 系統早前已跟（虛擬）／👀 未跟（只提示）
+
 # HKJC 足球價值投注系統 v1.5.1
 - /settle 改為：先抓賽果 → 再結算，並顯示「未結算 X → Y」
 - 結算對舊資料：fixtures 冇 source_id 時，用「隊名＋日期」對返，舊注都結算得到
@@ -112,3 +118,5 @@ notify 未設定時會提示去邊度填；README／手冊加 Windows（py）同
 價值判斷（去水 + EV）、三層風控、自動跟注（paper）同真實注項分開記錄、
 自動結算 + CLV、Telegram 雙向 bot、Flask 排程 + 儀表板、walk-forward 回測、
 Railway/gunicorn 部署設定。示範資料可即時跑通全流程。
+
+2026-10-18 修正重複注單：bets 加 partial unique index + INSERT OR IGNORE + 掃描鎖 + 已落注跳過（見 重複注單修正說明.md）

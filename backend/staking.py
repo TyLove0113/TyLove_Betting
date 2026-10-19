@@ -52,12 +52,21 @@ def size(ev_pct, model_p, odds, mode="paper", thresholds=None):
 
 
 def record_bet(value_bet, mode="paper", odds=None, stake=None, note=""):
+    """落一張注單。
+
+    同一場 + 同一盤口 + 同一選項 + 同一 mode 只會有一張（由 db 的 unique index
+    保證）。若已經存在，回傳 None —— 呼叫方要當作「冇新注」處理。
+    """
     from timeutil import now_hk
     stake = stake if stake is not None else value_bet.get("stake")
     odds = odds or value_bet.get("hkjc_odds")
-    return db.ex("""INSERT INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
+    with db.cursor() as c:
+        cur = c.execute("""INSERT OR IGNORE INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
                                      odds_taken, stake, status, note)
                     VALUES (?,?,?,?,?,?,?,?,?, 'open', ?)""",
                  (value_bet.get("id"), value_bet.get("match_id"), now_hk().strftime("%Y-%m-%d %H:%M:%S"),
                   mode, value_bet.get("market"), value_bet.get("line"), value_bet.get("selection"),
                   odds, stake, note))
+        if cur.rowcount == 0:
+            return None
+        return cur.lastrowid

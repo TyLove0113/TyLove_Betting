@@ -169,9 +169,32 @@ def cursor():
         conn.close()
 
 
+def _migrate_bets_unique(c):
+    """同一場 + 盤口 + 選項 + mode 只准有一張未作廢的注單。
+
+    舊資料若已有重複（每次掃描重複落注造成），保留最早一張，其餘標為 void
+    並在 note 註明；之後由 partial unique index 阻止新的重複。
+    """
+    keep = [r[0] for r in c.execute(
+        """SELECT MIN(id) FROM bets
+            WHERE IFNULL(status,'') <> 'void'
+            GROUP BY match_id, market, IFNULL(line,''), selection, mode""")]
+    if keep:
+        marks = ",".join("?" * len(keep))
+        c.execute(
+            f"""UPDATE bets
+                   SET status='void',
+                       note=COALESCE(NULLIF(note,''),'') || ' [duplicate-archived]'
+                 WHERE IFNULL(status,'') <> 'void' AND id NOT IN ({marks})""", keep)
+    c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS ux_bets_unique
+                 ON bets(match_id, market, IFNULL(line,''), selection, mode)
+                 WHERE IFNULL(status,'') <> 'void'""")
+
+
 def init_db():
     with cursor() as c:
         c.executescript(SCHEMA)
+        _migrate_bets_unique(c)
     return config.DB_PATH
 
 

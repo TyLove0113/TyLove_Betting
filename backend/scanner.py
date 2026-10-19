@@ -36,6 +36,45 @@ def _open_paper_keys():
     return {(r["match_id"], r["market"], r["line"], r["selection"]) for r in rows}
 
 
+def _bet_keys():
+    """已經落過注的 key（未作廢），用嚟阻止同一注項重複落注。"""
+    rows = db.q("SELECT match_id, market, line, selection FROM bets WHERE IFNULL(status,'') <> 'void'")
+    return {(r["match_id"], r["market"], r["line"], r["selection"]) for r in rows}
+
+
+def _acquire_scan_lock(max_age=600):
+    """避免兩個掃描重疊執行（重疊執行會各自落一次注，造成重複注單）。"""
+    import os
+    import time
+    path = str(config.DB_PATH) + ".scanlock"
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            if time.time() - os.path.getmtime(path) < max_age:
+                return None
+            os.remove(path)
+        except OSError:
+            return None
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except OSError:
+            return None
+    except OSError:
+        return path          # 建唔到鎖（權限等）→ 照跑，唔好因此停擺
+    os.write(fd, str(os.getpid()).encode())
+    os.close(fd)
+    return path
+
+
+def _release_scan_lock(path):
+    import os
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 # --------------------------------------------------------------- sync helpers
 def sync_fixtures(date=None):
     date = date or today_hk().strftime("%Y-%m-%d")
@@ -144,6 +183,12 @@ def odds_move_watch():
 # --------------------------------------------------------------------- scan
 def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=True):
     """Find value in matches starting inside the window. Returns a dict summary."""
+    lock = _acquire_scan_lock()
+    if lock is None:
+        return {"summary": {"checked": 0, "picked": 0, "booked": 0,
+                            "at": now_hk().strftime("%Y-%m-%d %H:%M"),
+                            "reason": "另一個掃描仍在執行，跳過本輪"},
+                "picks": [], "booked": []}
     min_minutes = config.MIN_MINUTES_BEFORE_KICKOFF if min_minutes is None else min_minutes
     max_minutes = 240 if max_minutes is None else max_minutes
     now = now_hk()
@@ -158,6 +203,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
     auto_ok, auto_why = can_bet, why
     recent = _recent_keys()
     open_paper = _open_paper_keys()
+    booked_keys = _bet_keys()
 
     for f in fixtures:
         ko = parse_hk(f["kickoff_hk"])
@@ -180,7 +226,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             if not row["is_value"]:
                 continue
             key = (row["match_id"], row["market"], row["line"], row["selection"])
-            if key in recent:
+            if key in recent or key in booked_keys:
                 continue
             stake, frac = staking.size(row["ev_pct"], row["model_p"], row["hkjc_odds"])
             vb_id = db.ex("""INSERT INTO value_bets (match_id, created_at, market, line, selection,
@@ -196,14 +242,20 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
 
             if config.AUTO_FOLLOW and can_bet and not dry_run and key not in open_paper:
                 bet_id = staking.record_bet(row, mode="paper", stake=stake, note="auto-follow")
-                booked.append({"bet_id": bet_id, "row": row})
-                can_bet, why = staking.risk_check("paper")
+                if bet_id:                      # None = 已經有同一張注單，唔重複落
+                    booked.append({"bet_id": bet_id, "row": row})
+                    can_bet, why = staking.risk_check("paper")
 
     summary = {"checked": checked, "picked": len(picked), "booked": len(booked),
                "reason": why, "at": now.strftime("%Y-%m-%d %H:%M")}
     db.log_job("scan", "ok", str(summary))
     if push and picked:
-        notifier.push(_format_picks(picked, booked, summary, open_paper, auto_ok, auto_why))
+        _txt = _format_picks(picked, booked, summary, open_paper, auto_ok, auto_why)
+        _btns = [[{"text": f"💰 #{r['id']} 落 ${r['stake']:.0f}",
+                   "callback_data": f"take:{r['id']}:{r['stake']:.0f}"}]
+                 for r in sorted(picked, key=lambda x: -x["ev_pct"])[:5]]
+        notifier.push(_txt, _btns or None)
+    _release_scan_lock(lock)
     return {"summary": summary, "picks": picked, "booked": booked}
 
 
@@ -217,8 +269,8 @@ def _format_picks(picks, booked, summary, open_keys=None, auto_ok=True, auto_why
         f = r["fixture"]
         ko = to_hk(parse_hk(f["kickoff_hk"]))
         k = (f["match_id"], r["market"], r["line"], r["selection"])
-        tag = ("🎯 新跟注" if k in booked_ids else
-               "✅ 已跟注" if k in open_keys else "👀 只提示")
+        tag = ("🎯 系統已跟（虛擬）" if k in booked_ids else
+               "✅ 系統早前已跟（虛擬）" if k in open_keys else "👀 未跟（只提示）")
         lines.append(
             f"{tag}\n<b>{notifier.esc(f['home_team'])} vs {notifier.esc(f['away_team'])}</b>"
             f"（{f['league']}）\n"
@@ -232,5 +284,5 @@ def _format_picks(picks, booked, summary, open_keys=None, auto_ok=True, auto_why
         elif not auto_ok:
             lines.append(f"\n（未有新跟注：{auto_why or '風險限制'}）")
         else:
-            lines.append("\n（以上注項之前已經跟咗，今次冇新注）")
+            lines.append("\n（以上只係系統嘅虛擬注；想記你真錢，撳下面按鈕或 /bet <編號> <金額>）")
     return "\n".join(lines)
