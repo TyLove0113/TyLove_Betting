@@ -229,13 +229,24 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             if key in recent or key in booked_keys:
                 continue
             stake, frac = staking.size(row["ev_pct"], row["model_p"], row["hkjc_odds"])
-            vb_id = db.ex("""INSERT INTO value_bets (match_id, created_at, market, line, selection,
-                                        model_p, fair_odds, hkjc_odds, ev_pct, kelly_pct, stake, reasons)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                          (row["match_id"], now.strftime("%Y-%m-%d %H:%M:%S"), row["market"], row["line"],
-                           row["selection"], row["model_p"], row["fair_odds"], row["hkjc_odds"],
-                           row["ev_pct"], row["kelly_pct"], stake,
-                           f"pred {pred['note']} top(lambda {pred['lam_home']:.2f}/{pred['lam_away']:.2f})"))
+            _day0 = now.strftime("%Y-%m-%d 00:00:00")
+            _note = f"pred {pred['note']} top(lambda {pred['lam_home']:.2f}/{pred['lam_away']:.2f})"
+            _ex = db.q("""SELECT id FROM value_bets WHERE match_id=? AND market=? AND IFNULL(line,'')=?
+                          AND selection=? AND created_at>=?""",
+                       (row["match_id"], row["market"], row["line"] or "", row["selection"], _day0), one=True)
+            if _ex:                                  # 同一場同一盤：更新價，唔好開新一注
+                vb_id = _ex["id"]
+                db.ex("""UPDATE value_bets SET created_at=?, model_p=?, fair_odds=?, hkjc_odds=?,
+                         ev_pct=?, kelly_pct=?, stake=?, reasons=? WHERE id=?""",
+                      (now.strftime("%Y-%m-%d %H:%M:%S"), row["model_p"], row["fair_odds"], row["hkjc_odds"],
+                       row["ev_pct"], row["kelly_pct"], stake, _note, vb_id))
+            else:
+                vb_id = db.ex("""INSERT INTO value_bets (match_id, created_at, market, line, selection,
+                                            model_p, fair_odds, hkjc_odds, ev_pct, kelly_pct, stake, reasons)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (row["match_id"], now.strftime("%Y-%m-%d %H:%M:%S"), row["market"], row["line"],
+                               row["selection"], row["model_p"], row["fair_odds"], row["hkjc_odds"],
+                               row["ev_pct"], row["kelly_pct"], stake, _note))
             row["id"] = vb_id
             row["stake"] = stake
             picked.append(row)

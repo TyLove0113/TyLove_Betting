@@ -7,6 +7,14 @@ from timeutil import now_hk, today_hk, day_bounds_hk, parse_hk, to_hk, fmt_hk
 from scanner import MARKET_LABEL, SEL_LABEL
 
 
+def bcode(r):
+    """注項編號：真實 R38、虛擬 P12（兩個系統分開睇）。"""
+    try:
+        return ("R" if r["mode"] == "real" else "P") + str(r["id"])
+    except Exception:
+        return f"#{r.get('id')}"
+
+
 def summary(mode=None, days=None, since=None):
     where, args = [], []
     if mode:
@@ -170,7 +178,7 @@ def open_bets_text(mode=None, limit=15):
             sc = f" · <b>{s['live_status']} {s['home_score']}-{s['away_score']}</b>"
         elif s.get("live_status"):
             sc = f" · {s['live_status']}"
-        out.append(f"#{r['id']} {fmt_hk(parse_hk(r['kickoff_hk']))} {r['home_team']} vs {r['away_team']}"
+        out.append(f"{bcode(r)} {fmt_hk(parse_hk(r['kickoff_hk']))} {r['home_team']} vs {r['away_team']}"
                    f"{sc} "
                    f"{MARKET_LABEL.get(r['market'], r['market'])}"
                    f"{' ' + str(r['line']) if r['line'] else ''} {SEL_LABEL.get(r['selection'], r['selection'])} "
@@ -202,8 +210,19 @@ def equity_series(mode="paper", limit=200):
 def value_bets_today(order="ev"):
     ob = "f.kickoff_hk ASC" if order == "time" else "v.ev_pct DESC"
     start, end = day_bounds_hk()
-    return db.q(f"""SELECT v.*, f.home_team, f.away_team, f.kickoff_hk, f.league
+    rows = db.q(f"""SELECT v.*, f.home_team, f.away_team, f.kickoff_hk, f.league
                    FROM value_bets v LEFT JOIN fixtures f ON f.match_id=v.match_id
                    WHERE v.created_at>=? AND v.created_at<?
                    ORDER BY {ob}""",
                 (start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")))
+    best, out = {}, []
+    for r in rows:
+        k = (r["match_id"], r["market"], r["line"] or "", r["selection"])
+        if k in best:
+            if r["id"] > best[k]["id"]:                 # 留最新一次掃描嘅價
+                out[out.index(best[k])] = r
+                best[k] = r
+            continue
+        best[k] = r
+        out.append(r)
+    return out

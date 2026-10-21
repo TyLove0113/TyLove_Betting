@@ -172,6 +172,61 @@ def api_bets():
     return jsonify(rows)
 
 
+@app.route("/api/bets", methods=["POST"])
+def api_bet_add():
+    """手動加一注真實注：{match_id|match, market, line, selection, stake, odds}"""
+    d = request.get_json(force=True, silent=True) or {}
+    match_id = d.get("match_id")
+    if not match_id and d.get("match"):                 # 用隊名都得
+        kw = f"%{d['match']}%"
+        r = db.q("SELECT match_id FROM fixtures WHERE home_team LIKE ? OR away_team LIKE ? "
+                 "ORDER BY kickoff_hk LIMIT 1", (kw, kw), one=True)
+        match_id = r["match_id"] if r else None
+    if not match_id:
+        return jsonify({"ok": False, "error": "搵唔到賽事"}), 400
+    try:
+        stake = float(d.get("stake") or 0)
+        odds = float(d.get("odds") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "注碼／賠率要係數字"}), 400
+    if stake <= 0 or odds <= 1:
+        return jsonify({"ok": False, "error": "注碼要大於 0，賠率要大於 1"}), 400
+    market = (d.get("market") or "HAD").upper()
+    line = str(d.get("line") or "").strip()
+    sel = (d.get("selection") or "H").upper()
+    bid = db.ex("""INSERT INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
+                   odds_taken, stake, status, note)
+                   VALUES (NULL,?,?, 'real', ?,?,?,?,?,'open','added on dashboard')""",
+                (match_id, now_hk().strftime("%Y-%m-%d %H:%M:%S"), market, line, sel, odds, stake))
+    return jsonify({"ok": True, "id": bid, "code": f"R{bid}"})
+
+
+@app.route("/api/bets/<int:bet_id>", methods=["PATCH"])
+def api_bet_edit(bet_id):
+    """改金額／賠率／狀態／派彩。"""
+    d = request.get_json(force=True, silent=True) or {}
+    sets, vals = [], []
+    for k, col in (("stake", "stake"), ("odds", "odds_taken"), ("payout", "payout"), ("status", "status")):
+        if k in d and d[k] not in (None, ""):
+            sets.append(f"{col}=?")
+            vals.append(d[k])
+    if not sets:
+        return jsonify({"ok": False, "error": "冇嘢改"}), 400
+    if "status" in d and d["status"] in ("won", "lost", "push", "void"):
+        sets.append("settled_at=?")
+        vals.append(now_hk().strftime("%Y-%m-%d %H:%M:%S"))
+    vals.append(bet_id)
+    db.ex(f"UPDATE bets SET {', '.join(sets)} WHERE id=?", tuple(vals))
+    r = db.q("SELECT * FROM bets WHERE id=?", (bet_id,), one=True)
+    return jsonify({"ok": True, "bet": r})
+
+
+@app.route("/api/bets/<int:bet_id>", methods=["DELETE"])
+def api_bet_del(bet_id):
+    db.ex("DELETE FROM bets WHERE id=?", (bet_id,))
+    return jsonify({"ok": True})
+
+
 @app.route("/api/doctor")
 def api_doctor():
     import doctor

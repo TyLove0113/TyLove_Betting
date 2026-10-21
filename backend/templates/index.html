@@ -63,16 +63,29 @@ async function load(){
     const se=rows.filter(x=>x.payout!=null);
     const pnl=se.reduce((a,x)=>a+((x.payout||0)-(x.stake||0)),0);
     return `注數 ${rows.length}・總注碼 $${f(st)}・已結算 ${se.length}・盈虧 <b class="${pnl>=0?'pos':'neg'}">$${f(pnl)}</b>`;};
-  const tbl=rows=>rows.length?`<table><tr><th>#</th><th>開賽</th><th>賽事</th><th>比分</th><th>盤</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th></tr>`+
+  const code=x=>(x.mode==='real'?'R':'P')+x.id;
+  const tbl=(rows,ed)=>rows.length?`<table><tr><th>#</th><th>開賽</th><th>賽事</th><th>比分</th><th>盤</th><th>賠率</th><th>注碼</th><th>狀態</th><th>盈虧</th>${ed?'<th></th>':''}</tr>`+
     rows.map(x=>{const pnl=(x.payout==null)?'':('$'+f((x.payout||0)-(x.stake||0)));
-      return `<tr><td>${x.id}</td><td>${(x.kickoff_hk||'').slice(5)}</td>
+      return `<tr><td><b>${code(x)}</b></td><td>${(x.kickoff_hk||'').slice(5)}</td>
       <td>${x.home_team||''} vs ${x.away_team||''}</td>
       <td>${sc(x)}</td><td>${mk(x)}</td><td>${f(x.odds_taken)}</td>
       <td>$${f(x.stake)}</td><td>${x.status}</td>
-      <td class="${pnl&&!pnl.startsWith('$-')?'pos':''}">${pnl}</td></tr>`;}).join('')+`</table>`:'冇記錄';
+      <td class="${pnl&&!pnl.startsWith('$-')?'pos':''}">${pnl}</td>`
+      +(ed?`<td style="white-space:nowrap"><button onclick="editBet(${x.id})" style="background:#26313f;color:#cfe;border:0;border-radius:4px;padding:2px 6px;cursor:pointer">✏️</button> <button onclick="delBet(${x.id})" style="background:#3a2630;color:#fcc;border:0;border-radius:4px;padding:2px 6px;cursor:pointer">🗑</button></td>`:'')+`</tr>`;
+    }).join('')+`</table>`:'冇記錄';
   document.getElementById('bets').innerHTML=
-    `<div style="margin-bottom:10px"><b>🧪 虛擬（系統自動跟注，唔係真錢）</b><div class="muted">${stat(grp('paper'))}</div>${tbl(grp('paper'))}</div>`+
-    `<div style="border-top:1px solid #232936;padding-top:8px"><b>💰 真實（你自己落注）</b><div class="muted">${stat(grp('real'))}</div>${tbl(grp('real'))}</div>`;
+    `<div style="margin-bottom:10px"><b>🧪 虛擬（系統自動跟注，唔係真錢）</b><div class="muted">${stat(grp('paper'))}</div>${tbl(grp('paper'),false)}</div>`+
+    `<div style="border-top:1px solid #232936;padding-top:8px"><b>💰 真實（你自己落注，可手動增修）</b><div class="muted">${stat(grp('real'))}</div>`+
+    `<div style="margin:8px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+       <input id="addm" list="fxlist" placeholder="隊名（例：艾費哈）" style="width:180px">
+       <datalist id="fxlist"></datalist>
+       <select id="addmk"><option value="HAD">主客和</option><option value="TTG">入球大細</option></select>
+       <input id="addln" placeholder="球數 2.5" style="width:90px">
+       <select id="addsel"><option value="H">主勝</option><option value="D">和</option><option value="A">客勝</option><option value="OVER">大</option><option value="UNDER">細</option></select>
+       <input id="addst" placeholder="$ 金額" style="width:90px">
+       <input id="addod" placeholder="@賠率" style="width:90px">
+       <button onclick="addBet()" style="background:#1f6f43;color:#fff;border:0;border-radius:4px;padding:4px 10px;cursor:pointer">＋ 新增真實注</button>
+     </div>`+tbl(grp('real'),true)+`</div>`;
   const fx=await (await fetch('/api/fixtures')).json();
   document.getElementById('fixtures').innerHTML= fx.length? `<table><tr><th>開賽</th><th>賽事</th><th>聯賽</th><th>狀態</th></tr>`+
     fx.slice(0,40).map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>
@@ -108,5 +121,27 @@ async function runDoctor(fix){
 }
 document.getElementById('doc_btn').onclick=()=>runDoctor(false);
 document.getElementById('doc_fix').onclick=()=>runDoctor(true);
-load(); setInterval(load, 60000);
+
+async function fillFx(){try{const fx=await (await fetch('/api/fixtures')).json();const dl=document.getElementById('fxlist');
+  if(dl) dl.innerHTML=fx.slice(0,100).map(x=>`<option value="${x.home_team} vs ${x.away_team}">`).join('');}catch(e){}}
+async function addBet(){
+  const m=(document.getElementById('addm').value||'').trim();
+  const body={match:m.split(' vs ')[0], market:document.getElementById('addmk').value,
+    line:document.getElementById('addln').value.trim(), selection:document.getElementById('addsel').value,
+    stake:parseFloat(document.getElementById('addst').value||'0'), odds:parseFloat(document.getElementById('addod').value||'0')};
+  const r=await fetch('/api/bets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!j.ok){alert(j.error||'新增失敗');return;}
+  document.getElementById('addst').value='';document.getElementById('addod').value='';load();
+}
+async function editBet(id){
+  const s=prompt('新注碼 $（留空＝唔改）',''); const o=prompt('新賠率（留空＝唔改）','');
+  const body={}; if(s) body.stake=parseFloat(s); if(o) body.odds=parseFloat(o);
+  if(!Object.keys(body).length) return;
+  await fetch('/api/bets/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); load();
+}
+async function delBet(id){ if(!confirm('刪除 R'+id+'？')) return;
+  await fetch('/api/bets/'+id,{method:'DELETE'}); load(); }
+
+load(); setInterval(load, 60000); setTimeout(fillFx, 1200);
 </script></body></html>

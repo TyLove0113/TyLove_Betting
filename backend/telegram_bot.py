@@ -326,10 +326,57 @@ def dispatch(text):
         if bet_id is None:
             return "⚠️ 呢個注項之前已經記錄過，唔會重複落注。", None
         f = db.q("SELECT * FROM fixtures WHERE match_id=?", (vb["match_id"],), one=True) or {}
-        return (f"✅ 已記錄真實注項 #{bet_id}\n{f.get('home_team','')} vs {f.get('away_team','')} "
+        return (f"✅ 已記錄真實注項 <b>R{bet_id}</b>\n{f.get('home_team','')} vs {f.get('away_team','')} "
                 f"{MARKET_LABEL.get(vb['market'])}{' ' + str(vb['line']) if vb['line'] else ''} "
                 f"{SEL_LABEL.get(vb['selection'])} ${stake:.0f} @ "
-                f"{(float(odds) if odds else vb['hkjc_odds']):.2f}"), None
+                f"{(float(odds) if odds else vb['hkjc_odds']):.2f}\n"
+                f"想改金額／賠率：<code>/edit R{bet_id} 10 @4.75</code>"), None
+
+    if cmd == "/edit" and len(args) >= 2:
+        bet = _resolve_bet(args[0])
+        if not bet:
+            return "搵唔到呢注。格式：/edit R38 10 @4.75", None
+        sets, vals = [], []
+        if args[1] not in ("-", ""):
+            try:
+                sets.append("stake=?")
+                vals.append(float(args[1]))
+            except ValueError:
+                return "注碼要係數字", None
+        if len(args) >= 3 and args[2].startswith("@"):
+            try:
+                sets.append("odds_taken=?")
+                vals.append(float(args[2][1:]))
+            except ValueError:
+                return "賠率要係數字（例 @4.75）", None
+        if not sets:
+            return "格式：/edit R38 10 @4.75（@賠率可省略）", None
+        vals.append(bet["id"])
+        db.ex(f"UPDATE bets SET {', '.join(sets)} WHERE id=?", tuple(vals))
+        r = db.q("SELECT * FROM bets WHERE id=?", (bet["id"],), one=True)
+        return (f"✏️ 已更新 <b>{journal.bcode(r)}</b>：金額 ${r['stake']:.0f} · 賠率 "
+                f"{(r['odds_taken'] or 0):.2f}\n改狀態用 /close {journal.bcode(r)} won"), None
+
+    if cmd == "/close" and len(args) >= 2:
+        bet = _resolve_bet(args[0])
+        if not bet:
+            return "搵唔到呢注。格式：/close R38 won", None
+        m = {"win": "won", "won": "won", "贏": "won", "輸": "lost", "lose": "lost", "lost": "lost",
+             "走": "push", "push": "push", "void": "void"}
+        st = m.get(args[1].lower(), args[1].lower())
+        if st not in ("won", "lost", "push", "void"):
+            return "狀態只可以係 won / lost / push", None
+        if len(args) >= 3:
+            try:
+                payout = float(args[2])
+            except ValueError:
+                return "派彩要係數字", None
+        else:
+            odds = bet["odds_taken"] or 0
+            payout = bet["stake"] * odds if st == "won" else (bet["stake"] if st in ("push", "void") else 0)
+        db.ex("UPDATE bets SET status=?, payout=?, settled_at=? WHERE id=?",
+              (st, round(payout, 2), now_hk().strftime("%Y-%m-%d %H:%M:%S"), bet["id"]))
+        return f"✅ {journal.bcode(bet)} → {st}，派彩 ${payout:.2f}", None
 
     if cmd == "/result" and len(args) >= 2:
         key = args[0].lstrip("#")
@@ -431,6 +478,16 @@ def _cmd_value(order="ev"):
     return "\n".join(out), btns
 
 
+
+
+def _resolve_bet(key):
+    k = (key or "").strip().lstrip("#").upper()
+    if k[:1] in ("R", "P") and k[1:].isdigit():
+        mode = "real" if k[0] == "R" else "paper"
+        return db.q("SELECT * FROM bets WHERE id=? AND mode=?", (k[1:], mode), one=True)
+    if k.isdigit():
+        return db.q("SELECT * FROM bets WHERE id=?", (k,), one=True)
+    return None
 
 def _cmd_bet_list():
     rows = journal.value_bets_today("time")
