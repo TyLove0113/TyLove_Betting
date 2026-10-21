@@ -225,6 +225,10 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                 continue
             if not row["is_value"]:
                 continue
+            if row["hkjc_odds"] < config.MIN_ODDS:     # 太低水
+                continue
+            if _blocked(row["market"], row["selection"]):   # 命中率長期唔夠嘅組合
+                continue
             key = (row["match_id"], row["market"], row["line"], row["selection"])
             if key in recent or key in booked_keys:
                 continue
@@ -297,3 +301,10 @@ def _format_picks(picks, booked, summary, open_keys=None, auto_ok=True, auto_why
         else:
             lines.append("\n（以上只係系統嘅虛擬注；想記你真錢，撳下面按鈕或 /bet <編號> <金額>）")
     return "\n".join(lines)
+
+
+def _blocked(market, selection):
+    raw = (getattr(config, "BLOCK_SELECTIONS", "") or "").strip()
+    if not raw:
+        return False
+    return f"{market}:{selection}".upper() in {x.strip().upper() for x in raw.split(",") if x.strip()}

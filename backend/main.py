@@ -90,6 +90,10 @@ def run_due_jobs(now):
     if minute % 5 == 0:
         _job("scan", lambda: scanner.scan())
 
+    # 4b. 開賽前記收市賠率（算 CLV）
+    if minute % 5 == 0:
+        _job("closing_odds", settlement.capture_closing)
+
     # 5. live scores for matches with open bets (every minute)
     if minute % 1 == 0:
         import live
@@ -225,6 +229,15 @@ def api_bet_edit(bet_id):
 def api_bet_del(bet_id):
     db.ex("DELETE FROM bets WHERE id=?", (bet_id,))
     return jsonify({"ok": True})
+
+
+@app.route("/api/diag")
+def api_diag():
+    import diagnose
+    mode = request.args.get("mode", "paper")
+    days = int(request.args.get("days", 60) or 60)
+    r = diagnose.report(mode=mode, days=days)
+    return jsonify({"ok": r.get("ok"), "text": r.get("text"), "summary": r.get("summary")})
 
 
 @app.route("/api/doctor")

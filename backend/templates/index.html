@@ -23,6 +23,7 @@
   </div>
   <div class="card"><h3>今日價值建議</h3><div id="value"></div></div>
   <div class="card"><h3>落注記錄（虛擬 / 真實分開）</h3><div id="bets"></div><div class="muted" style="margin-top:6px;line-height:1.7">盤口說明：<b>主客和</b> = 全場賽果，H 主勝（左邊嗰隊）／D 和／A 客勝（右邊嗰隊）；<b>入球大細 3.5 細</b> = 兩隊總入球 0–3 球，<b>大</b> = 4 球或以上；4.5 細 = 0–4 球、2.5 細 = 0–2 球。</div></div>
+  <div class="card"><h3>🔬 診斷</h3><div id="diag" class="muted">載入中…</div></div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
   <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
     <span>📒 投注記錄</span>
@@ -86,6 +87,11 @@ async function load(){
        <input id="addod" placeholder="@賠率" style="width:90px">
        <button onclick="addBet()" style="background:#1f6f43;color:#fff;border:0;border-radius:4px;padding:4px 10px;cursor:pointer">＋ 新增真實注</button>
      </div>`+tbl(grp('real'),true)+`</div>`;
+
+  try{const dg=await (await fetch('/api/diag?mode=paper&days=60')).json();
+    const d=document.getElementById('diag');
+    if(d) d.innerHTML=d.text? d.text.replace(/<b>/g,'<b style="color:#cfe">').replace(/\n/g,'<br>'):'';
+  }catch(e){}
   const fx=await (await fetch('/api/fixtures')).json();
   document.getElementById('fixtures').innerHTML= fx.length? `<table><tr><th>開賽</th><th>賽事</th><th>聯賽</th><th>狀態</th></tr>`+
     fx.slice(0,40).map(x=>`<tr><td>${(x.kickoff_hk||'').slice(5)}</td><td>${x.home_team} vs ${x.away_team}</td>

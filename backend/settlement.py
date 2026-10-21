@@ -131,3 +131,27 @@ def settle_pending(days_back=2):
     for r in rows:
         out.append(settle_match(r["match_id"]))
     return out
+
+
+def capture_closing(window_min=25):
+    """開賽前捕捉收市賠率 → 計 CLV（市場同唔同意你嘅價）。"""
+    from timeutil import now_hk, parse_hk
+    from datetime import timedelta
+    lo = (now_hk() + timedelta(minutes=0)).strftime("%Y-%m-%d %H:%M")
+    hi = (now_hk() + timedelta(minutes=window_min)).strftime("%Y-%m-%d %H:%M")
+    rows = db.q("""SELECT b.id, b.match_id, b.market, b.line, b.selection, b.odds_taken
+                   FROM bets b JOIN fixtures f ON f.match_id=b.match_id
+                   WHERE b.status='open' AND b.closing_odds IS NULL
+                     AND f.kickoff_hk BETWEEN ? AND ?""", (lo, hi))
+    n = 0
+    for r in rows:
+        cur = db.latest_odds(r["match_id"], market=r["market"])
+        hit = [x for x in cur if (x["selection"] or "").upper() == (r["selection"] or "").upper()
+               and str(x["line"] or "") == str(r["line"] or "")]
+        if not hit:
+            continue
+        close = hit[0]["odds"]
+        clv = (float(close) / float(r["odds_taken"]) - 1) if r["odds_taken"] else None
+        db.ex("UPDATE bets SET closing_odds=?, clv_pct=? WHERE id=?", (close, clv, r["id"]))
+        n += 1
+    return n

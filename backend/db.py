@@ -191,10 +191,20 @@ def _migrate_bets_unique(c):
                  WHERE IFNULL(status,'') <> 'void'""")
 
 
+def _migrate():
+    """舊 DB 補欄位（唔會刪資料）。"""
+    for col, typ in (("model_p", "REAL"), ("ev_pct", "REAL"), ("model_version", "TEXT")):
+        try:
+            ex(f"ALTER TABLE bets ADD COLUMN {col} {typ}")
+        except Exception:
+            pass
+
+
 def init_db():
     with cursor() as c:
         c.executescript(SCHEMA)
         _migrate_bets_unique(c)
+    _migrate()
     return config.DB_PATH
 
 

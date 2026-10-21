@@ -373,3 +373,46 @@ def fetch_live(match_ids=None):
             out.append({"match_id": mid, "status": (m.get("status") or "").upper(),
                         "home_score": rr.get("homeScore"), "away_score": rr.get("awayScore")})
     return out
+
+def backfill(start_date, end_date=None, max_days=200):
+    """由馬會 matchResults 匯入歷史賽果（賽程＋賽果＋隊史），用嚟訓練模型。"""
+    import settlement
+    from datetime import timedelta as _td
+    d0 = parse_hk(f"{start_date} 00:00")
+    d1 = parse_hk(f"{end_date or start_date} 00:00")
+    if not d0 or not d1:
+        return {"days": 0, "saved": 0, "error": "日期格式要 YYYY-MM-DD"}
+    day, n, saved = d0, 0, 0
+    while day <= d1 and n < max_days:
+        ds = day.strftime("%Y-%m-%d")
+        start, total = 0, None
+        while True:
+            try:
+                data = _call(Q.RESULTS, {"startDate": ds, "endDate": ds, "startIndex": start,
+                                         "endIndex": start + 20, "teamId": None})
+            except Exception:
+                break
+            total = (data.get("matchNumByDate") or {}).get("total") or 0
+            ms = data.get("matches") or []
+            if not ms:
+                break
+            for m in ms:
+                mid, ko = _match_id_for(m), _hk(m.get("kickOffTime"))
+                if not mid or not ko:
+                    continue
+                db.upsert_fixture({"match_id": mid, "source_id": str(m.get("id")),
+                                   "league": (m.get("tournament") or {}).get("name_ch") or "",
+                                   "kickoff_hk": ko,
+                                   "home_team": (m.get("homeTeam") or {}).get("name_ch") or "",
+                                   "away_team": (m.get("awayTeam") or {}).get("name_ch") or "",
+                                   "markets": "HAD,TTG", "status": "scheduled"})
+                sc = _final_score(m.get("results") or [])
+                if sc:
+                    settlement.enter_result(mid, sc[0], sc[1], source="hkjc")
+                    saved += 1
+            start += 20
+            if start >= total:
+                break
+        day += _td(days=1)
+        n += 1
+    return {"days": n, "saved": saved}

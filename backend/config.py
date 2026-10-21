@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.6.0"
+VERSION = "1.8.0"
 
 
 def _version_from_file():
@@ -132,7 +132,8 @@ MAX_GOALS = _env("MAX_GOALS", 12, int)
 
 # ---------------------------------------------------------------- value / staking
 EV_THRESHOLD = _env("EV_THRESHOLD", 0.05, float)               # 5% edge minimum
-MIN_ODDS = _env("MIN_ODDS", 1.35, float)                       # ignore short prices
+MIN_ODDS = _env("MIN_ODDS", 1.90, float)                       # ignore short prices (1.71 細水長期打唔贏)
+BLOCK_SELECTIONS = _env("BLOCK_SELECTIONS", "HAD:D,TTG:OVER", str)   # 停用組合（用逗號分隔，空白＝全開）
 MAX_ODDS = _env("MAX_ODDS", 12.0, float)
 MAX_EV_ACCEPT = _env("MAX_EV_ACCEPT", 0.60, float)             # >60% edge => almost certainly a stale/bad price
 UNITS_PER_BET_PCT = _env("UNITS_PER_BET_PCT", 1.0, float)      # % of bankroll per bet (flat mode)

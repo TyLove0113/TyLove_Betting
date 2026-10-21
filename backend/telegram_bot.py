@@ -269,6 +269,28 @@ def dispatch(text):
         import live
         return live.text(), None
 
+    if cmd == "/backfill":
+        import hkjc
+        from timeutil import now_hk, parse_hk
+        from datetime import timedelta
+        if args and args[0].startswith("20"):
+            start = args[0]
+            end = args[1] if len(args) >= 2 else args[0]
+        else:
+            days = int(args[0]) if args and args[0].isdigit() else 30
+            end = (now_hk() - timedelta(days=1)).strftime("%Y-%m-%d")
+            start = (now_hk() - timedelta(days=days)).strftime("%Y-%m-%d")
+        r = hkjc.backfill(start, end)
+        n = db.q("SELECT COUNT(*) c FROM team_matches", one=True)["c"]
+        return (f"📚 匯入歷史賽果：{r.get('days', 0)} 日 · {r.get('saved', 0)} 場\n"
+                f"隊史總數 {n} 條 —— 之後預測會用真實隊強度。"), None
+
+    if cmd == "/diag":
+        import diagnose
+        mode = "real" if (args and args[0].lower() in ("real", "真", "真實")) else "paper"
+        days = int(args[1]) if len(args) >= 2 and args[1].isdigit() else 60
+        return diagnose.report(mode=mode, days=days)["text"], None
+
     if cmd == "/roi":
         days = int(args[0]) if args and args[0].isdigit() else None
         return journal.report_text(days=days), None

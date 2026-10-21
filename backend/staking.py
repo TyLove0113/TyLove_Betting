@@ -62,11 +62,12 @@ def record_bet(value_bet, mode="paper", odds=None, stake=None, note=""):
     odds = odds or value_bet.get("hkjc_odds")
     with db.cursor() as c:
         cur = c.execute("""INSERT OR IGNORE INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
-                                     odds_taken, stake, status, note)
-                    VALUES (?,?,?,?,?,?,?,?,?, 'open', ?)""",
+                                     odds_taken, stake, status, note, model_p, ev_pct, model_version)
+                    VALUES (?,?,?,?,?,?,?,?,?, 'open', ?,?,?,?)""",
                  (value_bet.get("id"), value_bet.get("match_id"), now_hk().strftime("%Y-%m-%d %H:%M:%S"),
                   mode, value_bet.get("market"), value_bet.get("line"), value_bet.get("selection"),
-                  odds, stake, note))
+                  odds, stake, note, value_bet.get("model_p"), value_bet.get("ev_pct"),
+                  __import__("config").VERSION))
         if cur.rowcount == 0:
             return None
         return cur.lastrowid
