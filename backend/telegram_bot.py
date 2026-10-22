@@ -39,9 +39,17 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 <b>💎 價值同落注</b>
 /value － 今日價值清單（EV 排序）
 /scan － 即刻重新掃描（唔等排程）
-/bet &lt;id&gt; &lt;注碼&gt; [@賠率] － 記錄你真實落咗嘅注
-/open － 未結算注項
+/bet － 今日注項＋一撳記錄真實注
+/bet &lt;id&gt; &lt;注碼&gt; [@賠率] － 記錄真實注（例：/bet 38 10 @4.75）
+/edit &lt;R38&gt; &lt;注碼&gt; [@賠率] － 改金額／賠率
+/close &lt;R38&gt; won|lost|push － 手動 mark 結算
+/open － 未結算注項（R=真實 P=虛擬）
+/live － 有落注嘅場即時比數
 /result &lt;id&gt; &lt;主-客&gt; － 人手入賽果（例：/result 3 2-1）
+
+<b>🔬 分析同改進</b>
+/diag [real] [日數] － 診斷：命中率 vs 模型／按盤口／EV／賠率分組
+/backfill [日數|起 止] － 匯入歷史賽果（訓練模型，例：/backfill 60）
 
 <b>📊 成績</b>
 /roi [日數] － ROI / 命中率 / CLV（例如 /roi 30）
