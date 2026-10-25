@@ -278,20 +278,33 @@ def dispatch(text):
         return live.text(), None
 
     if cmd == "/backfill":
-        import hkjc
-        from timeutil import now_hk, parse_hk
+        import threading
         from datetime import timedelta
-        if args and args[0].startswith("20"):
-            start = args[0]
-            end = args[1] if len(args) >= 2 else args[0]
-        else:
-            days = int(args[0]) if args and args[0].isdigit() else 30
-            end = (now_hk() - timedelta(days=1)).strftime("%Y-%m-%d")
-            start = (now_hk() - timedelta(days=days)).strftime("%Y-%m-%d")
-        r = hkjc.backfill(start, end)
-        n = db.q("SELECT COUNT(*) c FROM team_matches", one=True)["c"]
-        return (f"📚 匯入歷史賽果：{r.get('days', 0)} 日 · {r.get('saved', 0)} 場\n"
-                f"隊史總數 {n} 條 —— 之後預測會用真實隊強度。"), None
+
+        def _bg():
+            try:
+                import hkjc
+                from timeutil import now_hk
+                if args and args[0].startswith("20"):
+                    start = args[0]
+                    end = args[1] if len(args) >= 2 else args[0]
+                else:
+                    days = int(args[0]) if args and args[0].isdigit() else 30
+                    days = min(days, 120)
+                    end = (now_hk() - timedelta(days=1)).strftime("%Y-%m-%d")
+                    start = (now_hk() - timedelta(days=days)).strftime("%Y-%m-%d")
+                notifier.push(f"⏳ 開始匯入 {start} → {end} 嘅賽果，完成會通知你。")
+                r = hkjc.backfill(start, end)
+                n = db.q("SELECT COUNT(*) c FROM team_matches", one=True)["c"]
+                notifier.push(f"📚 <b>匯入完成</b>\n{start} → {end}\n"
+                              f"賽果 {r.get('saved', 0)} 場（{r.get('days', 0)} 日）\n"
+                              f"隊史總數 {n} 條 —— 之後預測會用真實隊強度。")
+            except Exception as e:                      # noqa: BLE001
+                notifier.push_error("backfill", e)
+
+        threading.Thread(target=_bg, daemon=True, name="backfill").start()
+        return ("⏳ 收到，背景開始匯入歷史賽果（1–8 分鐘）。\n"
+                "完成會自動通知你，期間可以繼續用其他指令。"), None
 
     if cmd == "/diag":
         import diagnose
