@@ -438,6 +438,16 @@ def dispatch(text):
                        f"{r['played']} 場 場均入 {r['gf']:.2f} 失 {r['ga']:.2f}")
         return "\n".join(out), None
 
+    usage = {
+        "/result": "格式：/result &lt;注號或隊名&gt; &lt;主-客&gt;\n例：/result R38 2-1 或 /result 山形山神 1-0",
+        "/edit": "格式：/edit &lt;R38&gt; &lt;注碼&gt; [@賠率]\n例：/edit R38 10 @4.75",
+        "/close": "格式：/close &lt;R38&gt; won|lost|push [派彩]\n例：/close R38 won",
+        "/set": "格式：/set KEY VALUE\n例：/set EV_THRESHOLD 0.08",
+        "/odds": "格式：/odds &lt;關鍵字&gt;\n例：/odds 山形山神",
+        "/sim": "格式：/sim A vs B\n例：/sim 曼城 vs 利物浦",
+    }
+    if cmd in usage:
+        return usage[cmd], None
     return f"唔識呢個指令：{cmd}\n\n{HELP}", None
 
 

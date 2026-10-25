@@ -227,6 +227,10 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                 continue
             if row["hkjc_odds"] < config.MIN_ODDS:     # 太低水
                 continue
+            if row["hkjc_odds"] > getattr(config, "MAX_ODDS", 99):   # 太冷門（等於買六合彩）
+                continue
+            if row["model_p"] < getattr(config, "MIN_MODEL_P", 0):   # 機率太低唔值博
+                continue
             if _blocked(row["market"], row["selection"]):   # 命中率長期唔夠嘅組合
                 continue
             key = (row["match_id"], row["market"], row["line"], row["selection"])
@@ -255,6 +259,10 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             row["stake"] = stake
             picked.append(row)
 
+            _per_match = sum(1 for k in open_paper if k[0] == row["match_id"]) + \
+                sum(1 for x in booked if x["row"]["match_id"] == row["match_id"])
+            if _per_match >= getattr(config, "MAX_BETS_PER_MATCH", 1):
+                continue
             if config.AUTO_FOLLOW and can_bet and not dry_run and key not in open_paper:
                 bet_id = staking.record_bet(row, mode="paper", stake=stake, note="auto-follow")
                 if bet_id:                      # None = 已經有同一張注單，唔重複落

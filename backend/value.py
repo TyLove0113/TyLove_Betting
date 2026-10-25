@@ -133,6 +133,10 @@ def _isnum(v):
 
 
 def _row(fixture, market, line, selection, model_p, fair_p, odds, thresholds):
+    # 向市場機率收縮：模型同市場各佔一半。模型冇隊強度時，單靠模型會不停買冷門。
+    w = float(getattr(config, "MODEL_MARKET_BLEND", 0.5) or 0.0)
+    if fair_p and 0 < w <= 1:
+        model_p = w * model_p + (1.0 - w) * fair_p
     res = evaluate(model_p, odds, thresholds)
     return {
         "match_id": fixture["match_id"], "market": market, "line": line, "selection": selection,
