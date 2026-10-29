@@ -498,6 +498,13 @@ def _cmd_status():
     odds = db.last_job("refresh_odds")
     jp = journal.summary(mode="paper")
     jr = journal.summary(mode="real")
+    try:
+        import ai as _ai2
+        _ai_line = ("AI：開 · 今日 %d/%d 次 · %d tokens" % (
+            _ai2.calls_today(), int(config.AI_MAX_CALLS_PER_DAY), _ai2.tokens_today())
+            if _ai2.enabled() else "AI：關")
+    except Exception:                                            # noqa: BLE001
+        _ai_line = "AI：—"
     mods = []
     for _m in ("ai", "diagnose", "live", "settlement"):
         try:
@@ -508,6 +515,7 @@ def _cmd_status():
     _has = lambda c: "✅" if c in HELP else "✖"
     out = [f"🟢 <b>系統狀態</b> v{s['version']} · 香港時間 {now_hk().strftime('%Y-%m-%d %H:%M')}",
            f"模組：{' '.join(mods)}　指令：/model{_has('/model')} /ai{_has('/ai')} /diag{_has('/diag')}",
+           _ai_line,
            f"市場：{','.join(s['markets'])} · EV 門檻 {s['ev_threshold']*100:.1f}% · "
            f"注碼模式 {s['staking_mode']} · 自動跟注 {'開' if s['auto_follow'] else '關'}",
            f"上次同步賽程：{sync['ts'] if sync else '未跑'}（{sync['status'] if sync else '-'}）",

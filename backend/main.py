@@ -254,6 +254,63 @@ def api_diag():
     return jsonify({"ok": r.get("ok"), "text": r.get("text"), "summary": r.get("summary")})
 
 
+SHOWN = ["AI_ENABLED", "AI_MODEL", "AI_MAX_CALLS_PER_DAY", "AI_API_KEY",
+         "EV_THRESHOLD", "MIN_ODDS", "MAX_ODDS", "MIN_MODEL_P",
+         "MAX_BETS_PER_DAY", "UNITS_PER_BET_PCT", "MODEL_MARKET_BLEND",
+         "BLOCK_SELECTIONS", "AUTO_FOLLOW"]
+
+
+def _dash_ok():
+    """有設 DASH_TOKEN 就要帶 token；未設就開放（會喺網頁提示）。"""
+    tok = getattr(config, "DASH_TOKEN", "")
+    if not tok:
+        return True
+    got = request.headers.get("X-Dash-Token") or request.args.get("token") or ""
+    return got == tok
+
+
+@app.route("/api/ai")
+def api_ai():
+    import ai
+    return jsonify({"ok": True, "enabled": ai.enabled(),
+                    "model": getattr(config, "AI_MODEL", ""),
+                    "calls_today": ai.calls_today(),
+                    "tokens_today": ai.tokens_today(),
+                    "cap": getattr(config, "AI_MAX_CALLS_PER_DAY", 12),
+                    "has_key": bool(getattr(config, "AI_API_KEY", ""))})
+
+
+@app.route("/api/settings")
+def api_settings_get():
+    items = []
+    for k in SHOWN:
+        v = getattr(config, k, None)
+        if k == "AI_API_KEY":
+            v = ("••••" + v[-4:]) if v else ""
+        items.append({"key": k, "value": v, "type": type(v).__name__})
+    return jsonify({"ok": True, "items": items,
+                    "locked": bool(getattr(config, "DASH_TOKEN", ""))})
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings_post():
+    if not _dash_ok():
+        return jsonify({"ok": False, "error": "需要 token"}), 403
+    d = request.get_json(force=True, silent=True) or {}
+    out = {}
+    for k, v in (d or {}).items():
+        K = str(k).upper()
+        if K not in SHOWN:
+            continue
+        if K == "AI_API_KEY" and str(v).startswith("••"):
+            continue                                     # 冇改就唔覆蓋
+        try:
+            out[K] = settings_store.set_value(K, v)
+        except Exception as e:                           # noqa: BLE001
+            return jsonify({"ok": False, "error": f"{K}: {e}"}), 400
+    return jsonify({"ok": True, "set": out})
+
+
 @app.route("/api/doctor")
 def api_doctor():
     import doctor

@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.12.1"
+VERSION = "1.13.0"
 
 
 def _version_from_file():
@@ -138,6 +138,7 @@ MIN_MODEL_P = _env("MIN_MODEL_P", 0.30, float)                # 模型機率下�
 MAX_BETS_PER_MATCH = _env("MAX_BETS_PER_MATCH", 1, int)       # 同一場最多幾注
 MIN_ODDS = _env("MIN_ODDS", 1.90, float)                       # ignore short prices (1.71 細水長期打唔贏)
 BLOCK_SELECTIONS = _env("BLOCK_SELECTIONS", "HAD:D,TTG:OVER", str)   # 停用組合（用逗號分隔，空白＝全開）
+DASH_TOKEN = _env("DASH_TOKEN", "", str)                    # 設定頁保護（留空＝開放，會有提示）
 AI_ENABLED = _env("AI_ENABLED", False, bool)                  # 可選 AI 層（預設關）
 AI_API_KEY = _env("AI_API_KEY", "", str)
 AI_BASE_URL = _env("AI_BASE_URL", "https://api.openai.com/v1", str)

@@ -1,3 +1,8 @@
+# HKJC 足球價值投注系統 v1.13.0
+- 網頁新增「⚙️ 設定 · AI 用量」卡：開關 AI、每日 call 上限、模型、API key、EV/賠率/注碼
+- 網頁同 /status 都睇到今日 AI call 數同 token 用量（/ai 一樣）
+- /api/settings（GET/POST）、/api/ai；可用 DASH_TOKEN 保護設定頁
+
 # HKJC 足球價值投注系統 v1.12.1
 - AI 額度 = min(今日剩餘注額, AI 剩餘 call)：唔會問多過會落嘅注
 - 同一場內按 EV 由高到低處理，最值博嘅先問 AI

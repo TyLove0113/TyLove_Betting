@@ -24,6 +24,15 @@
   <div class="card"><h3>今日價值建議</h3><div id="value"></div></div>
   <div class="card"><h3>落注記錄（虛擬 / 真實分開）</h3><div id="bets"></div><div class="muted" style="margin-top:6px;line-height:1.7">盤口說明：<b>主客和</b> = 全場賽果，H 主勝（左邊嗰隊）／D 和／A 客勝（右邊嗰隊）；<b>入球大細 3.5 細</b> = 兩隊總入球 0–3 球，<b>大</b> = 4 球或以上；4.5 細 = 0–4 球、2.5 細 = 0–2 球。</div></div>
   <div class="card"><h3>🔬 診斷</h3><div id="diag" class="muted">載入中…</div></div>
+  <div class="card"><h3>⚙️ 設定 · AI 用量</h3>
+    <div id="aiuse" class="muted">載入中…</div>
+    <div id="setbox" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button onclick="saveSettings()">儲存設定</button>
+      <span id="setmsg" class="muted"></span>
+    </div>
+    <div class="muted" style="margin-top:6px">AI 預設關閉；冇 API key 唔會用任何 token。key 只會顯示尾 4 位。</div>
+  </div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
   <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
     <span>📒 投注記錄</span>
@@ -149,5 +158,41 @@ async function editBet(id){
 async function delBet(id){ if(!confirm('刪除 R'+id+'？')) return;
   await fetch('/api/bets/'+id,{method:'DELETE'}); load(); }
 
-load(); setInterval(load, 60000); setTimeout(fillFx, 1200);
+load(); setInterval(load, 60000);
+loadSettings(); setTimeout(fillFx, 1200);
+
+let SETS={};
+async function loadSettings(){
+  const a=await (await fetch('/api/ai')).json();
+  document.getElementById('aiuse').innerHTML =
+    `AI：<b>${a.enabled?'開':'關'}</b>　模型 <b>${a.model||'-'}</b>　`+
+    `今日 <b>${a.calls_today}/${a.cap}</b> 次 · <b>${a.tokens_today}</b> tokens`+
+    `${a.has_key?'':'　<span class="neg">（未設 key）</span>'}`;
+  const r=await (await fetch('/api/settings')).json();
+  SETS={}; r.items.forEach(x=>SETS[x.key]=x.value);
+  const num=(k,label)=>`<label class="muted">${label}<br><input id="s_${k}" type="number" step="0.01" value="${SETS[k]??''}" style="width:100%"></label>`;
+  const txt=(k,label,ph='')=>`<label class="muted">${label}<br><input id="s_${k}" value="${SETS[k]??''}" placeholder="${ph}" style="width:100%"></label>`;
+  if(!r.locked) document.getElementById('setmsg').textContent = '⚠️ 未設 DASH_TOKEN：任何人有網址都可改設定（建議 Railway 加 DASH_TOKEN）';
+  document.getElementById('setbox').innerHTML =
+    `<label class="muted">AI 開啟<br><input id="s_AI_ENABLED" type="checkbox" ${SETS.AI_ENABLED?'checked':''}></label>`+
+    num('AI_MAX_CALLS_PER_DAY','AI 每日次數上限')+
+    txt('AI_MODEL','AI 模型')+
+    txt('AI_API_KEY','OpenAI API key','sk-...（留空＝唔改）')+
+    num('EV_THRESHOLD','EV 門檻（0.06 = 6%）')+
+    num('MIN_ODDS','最低賠率')+num('MAX_ODDS','最高賠率')+
+    num('MAX_BETS_PER_DAY','每日最多注數')+num('UNITS_PER_BET_PCT','每注 % 本金')+
+    `<label class="muted">AI 自動跟注<br><input id="s_AUTO_FOLLOW" type="checkbox" ${SETS.AUTO_FOLLOW?'checked':''}></label>`;
+}
+async function saveSettings(){
+  const v=(id)=>document.getElementById('s_'+id);
+  const body={AI_ENABLED:v('AI_ENABLED').checked, AUTO_FOLLOW:v('AUTO_FOLLOW').checked};
+  ['AI_MAX_CALLS_PER_DAY','AI_MODEL','AI_API_KEY','EV_THRESHOLD','MIN_ODDS','MAX_ODDS','MAX_BETS_PER_DAY','UNITS_PER_BET_PCT']
+    .forEach(k=>{const el=v(k); if(el&&String(el.value).trim()!=='') body[k]=el.value.trim();});
+  const h={'Content-Type':'application/json'};
+  const t=localStorage.getItem('dashToken'); if(t) h['X-Dash-Token']=t;
+  const r=await fetch('/api/settings',{method:'POST',headers:h,body:JSON.stringify(body)});
+  const j=await r.json();
+  document.getElementById('setmsg').textContent = j.ok?'✅ 已儲存':('⚠️ '+(j.error||'失敗'));
+  if(j.ok) loadSettings();
+}
 </script></body></html>
