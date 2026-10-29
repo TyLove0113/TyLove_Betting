@@ -65,6 +65,10 @@ def run_due_jobs(now):
         _last[stamp_key] = True
         return True
 
+    # 0. AI 賽後檢討（每日一次，23:50）
+    if once("ai_review", hour == 23 and minute >= 50):
+        _job("ai_review", _ai_review_job)
+
     # 1. daily schedule + odds + heartbeat
     if once("sync", hour == config.SYNC_FIXTURES_HOUR and minute < 5):
         _job("sync_fixtures", lambda: scanner.sync_fixtures())
@@ -103,6 +107,15 @@ def run_due_jobs(now):
     # 6. odds movement watch every 15 minutes
     if minute % 15 == 0:
         _job("odds_watch", scanner.odds_move_watch)
+
+
+def _ai_review_job():
+    import journal
+    t = journal.ai_review_today()
+    if t:
+        notifier.push(t)
+        return {"pushed": True}
+    return {"pushed": False}
 
 
 def _job(name, fn):

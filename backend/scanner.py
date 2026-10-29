@@ -200,6 +200,16 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
 
     checked, picked, booked = 0, [], []
     _ai_veto = []
+    _ai_used = 0
+    try:
+        import ai as _ai_mod
+        _today_paper = db.q("SELECT COUNT(*) c FROM bets WHERE mode='paper' AND created_at>=?",
+                            (now.strftime("%Y-%m-%d 00:00:00"),), one=True)["c"]
+        _slots = max(0, int(getattr(config, "MAX_BETS_PER_DAY", 8)) - _today_paper)
+        _ai_budget = min(_slots, max(0, int(getattr(config, "AI_MAX_CALLS_PER_DAY", 12))
+                                     - _ai_mod.calls_today()))
+    except Exception:                                            # noqa: BLE001
+        _ai_budget = 0
     can_bet, why = staking.risk_check("paper")
     auto_ok, auto_why = can_bet, why
     recent = _recent_keys()
@@ -219,6 +229,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
         checked += 1
         pred = engine.predict_fixture(f)
         priced = value.market_view(f, pred, odds_rows)
+        priced.sort(key=lambda r: -(r.get("ev_pct") or 0))     # 高 EV 先處理／先問 AI
         for row in priced:
             if row["selection"] == "INFO":
                 continue
@@ -267,9 +278,11 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             _ai_note = ""
             try:
                 import ai as _ai
-                if _ai.enabled():
-                    _v = _ai.assess(f["home_team"], f["away_team"], f.get("league") or "",
-                                    row["market"], row["selection"], row["line"], f["kickoff_hk"])
+                if _ai.enabled() and _ai_used < _ai_budget:
+                    _ai_used += 1
+                    _v = _ai.assess(row["match_id"], f["home_team"], f["away_team"],
+                                    f.get("league") or "", row["market"], row["selection"],
+                                    row["line"], f["kickoff_hk"])
                     if _v:
                         row["ai"] = _v
                         if _v["risk"] == "high":        # AI 明確反對就唔落
@@ -286,7 +299,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
 
     summary = {"checked": checked, "picked": len(picked), "booked": len(booked),
                "reason": why, "at": now.strftime("%Y-%m-%d %H:%M"),
-               "ai_veto": len(_ai_veto)}
+               "ai_veto": len(_ai_veto), "ai_used": _ai_used, "ai_budget": _ai_budget}
     db.log_job("scan", "ok", str(summary))
     if push and picked:
         _txt = _format_picks(picked, booked, summary, open_paper, auto_ok, auto_why)

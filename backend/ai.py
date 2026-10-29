@@ -1,10 +1,13 @@
-"""可選 AI 層（OpenAI 兼容 API）：只用嚟「否決／註記／解釋」，唔直接改機率。
+"""可選 AI 層（OpenAI 兼容 API）：只做「否決／註記／賽後檢討」。
 
-設計原則：
-- 冇 key 就完全唔會執行（預設關閉）。
-- 每次掃描最多 AI_MAX_CALLS_PER_DAY 次，避免洗錢。
-- AI 只可以 veto（風險高就唔落）或寫註記，唔可以自己發明預測。
+設計原則（控 token 為第一優先）：
+- 冇 key 就完全唔執行（預設關閉）。
+- 只對「準備落注」嘅注問，唔會逐場問。
+- 同一場／同一盤／同一日只問一次（DB 快取）。
+- 每日硬上限 AI_MAX_CALLS_PER_DAY，用完即停。
+- 每次 max_tokens=220，temperature 0.2，失敗即跳過（唔重試）。
 """
+import hashlib
 import json
 
 import requests
@@ -18,79 +21,147 @@ def enabled():
     return bool(getattr(config, "AI_ENABLED", False) and getattr(config, "AI_API_KEY", ""))
 
 
-def _today_key():
-    return "ai_calls_" + now_hk().strftime("%Y-%m-%d")
+def _dk(suffix=""):
+    return suffix + now_hk().strftime("%Y-%m-%d")
 
 
-def calls_today():
+def _geti(key):
     try:
-        return int(db.get_setting(_today_key()) or 0)
+        return int(db.get_setting(key) or 0)
     except Exception:
         return 0
 
 
-def _bump():
-    db.set_setting(_today_key(), str(calls_today() + 1))
+def calls_today():
+    return _geti(_dk("ai_calls_"))
 
 
-def chat(messages, json_mode=True, timeout=45):
+def tokens_today():
+    return _geti(_dk("ai_tokens_"))
+
+
+def _bump(usage=None):
+    db.set_setting(_dk("ai_calls_"), str(calls_today() + 1))
+    if usage:
+        n = int(usage.get("total_tokens") or 0)
+        db.set_setting(_dk("ai_tokens_"), str(tokens_today() + n))
+
+
+def _ckey(match_id, market, line, selection):
+    raw = f"{match_id}|{market}|{line}|{selection}|{_dk()}"
+    return "ai_cache_" + hashlib.sha1(raw.encode()).hexdigest()[:20]
+
+
+def _cache_get(k):
+    v = db.get_setting(k)
+    if not v:
+        return None
+    try:
+        return json.loads(v)
+    except Exception:
+        return None
+
+
+def _cache_set(k, val):
+    try:
+        db.set_setting(k, json.dumps(val, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def chat(messages, json_mode=True, timeout=40, max_tokens=220):
     base = (getattr(config, "AI_BASE_URL", "") or "https://api.openai.com/v1").rstrip("/")
     payload = {"model": getattr(config, "AI_MODEL", "gpt-4o-mini"),
-               "messages": messages, "temperature": 0.2}
+               "messages": messages, "temperature": 0.2, "max_tokens": max_tokens}
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     r = requests.post(base + "/chat/completions", json=payload, timeout=timeout,
                       headers={"Authorization": "Bearer " + config.AI_API_KEY})
     r.raise_for_status()
-    _bump()
-    return (r.json().get("choices") or [{}])[0].get("message", {}).get("content") or ""
+    data = r.json()
+    _bump(data.get("usage"))
+    return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
-PROMPT = """你係足球賽前資訊分析員。只根據你確定的公開資訊回答；
-唔確定就講唔確定，唔准估賽果，唔准講賠率建議。
-回覆 JSON：
-{"risk":"low|medium|high","reason":"<30字廣東話>","factors":["傷停","輪換","賽程","天氣"]}
-risk=high 只用在有明確負面因素（主力重傷、賽程密集輪換、內部動盪）。"""
+PROMPT = """你係足球賽前風險審查員。只講你確定嘅公開資訊（傷停、停賽、輪換、賽程密度、內部問題）。
+規則：
+- 唔准預測賽果、唔准講賠率建議、唔准重複我俾你嘅數字。
+- 冇明確負面資訊就答 low，唔准為咗顯得有用而編嘢。
+- 只回 JSON：{"risk":"low|medium|high","reason":"<25字內廣東話>","key_out":["缺陣球員"]}
+risk=high 只用在「確定有主力缺陣／確定大幅輪換」。"""
 
 
-def assess(home, away, league, market, selection, line, kickoff):
-    """回傳 {risk, reason} 或 None。"""
+def assess(match_id, home, away, league, market, selection, line, kickoff):
+    """回傳 {risk, reason} 或 None。有快取就唔會再 call。"""
     if not enabled():
         return None
+    k = _ckey(match_id, market, line, selection)
+    hit = _cache_get(k)
+    if hit is not None:
+        return hit
     if calls_today() >= int(getattr(config, "AI_MAX_CALLS_PER_DAY", 12)):
         return None
-    q = (f"{home} vs {away}（{league}），開賽 {kickoff}。"
-         f"我打算買：{market} {line or ''} {selection}。"
-         f"有冇明確公開資訊令我唔應該買？")
+    q = f"{home} vs {away}（{league}），開賽 {kickoff}。我打算買 {market} {line or ''} {selection}。有冇確定嘅負面資訊？"
     try:
         raw = chat([{"role": "system", "content": PROMPT}, {"role": "user", "content": q}])
         data = json.loads(raw)
         risk = str(data.get("risk", "")).lower()
         if risk not in ("low", "medium", "high"):
             return None
-        return {"risk": risk, "reason": str(data.get("reason", ""))[:60]}
-    except Exception:
+        out = {"risk": risk, "reason": str(data.get("reason", ""))[:50]}
+        _cache_set(k, out)
+        return out
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+REVIEW_PROMPT = """你係投注檢討員。根據我俾你嘅當日已結算注項（盤口、賠率、結果），
+用 5 點以內講：1) 邊類注最蝕 2) 有冇重複同一場 3) 明日要避免乜。
+唔准講鼓勵說話，唔准預測賽果，只回 JSON：{"points":["...","..."],"avoid":["..."]}"""
+
+
+def daily_review(rows):
+    """一次 call 總結當日（唔逐注問）。rows: [(desc, status, stake, payout)]"""
+    if not enabled() or not rows:
+        return None
+    if calls_today() >= int(getattr(config, "AI_MAX_CALLS_PER_DAY", 12)):
+        return None
+    k = _dk("ai_review_")
+    if db.get_setting(k):
+        return None                                              # 每日一次
+    body = "\n".join(f"{d} | {s} | ${st:.0f} -> ${pa:.0f}" for d, s, st, pa in rows[:30])
+    try:
+        raw = chat([{"role": "system", "content": REVIEW_PROMPT},
+                    {"role": "user", "content": body}], max_tokens=300)
+        data = json.loads(raw)
+        db.set_setting(k, "1")
+        return data
+    except Exception:                                            # noqa: BLE001
         return None
 
 
 def status_text():
     if not getattr(config, "AI_ENABLED", False):
-        return ("🤖 <b>AI 分析</b>：已關閉\\n"
+        return ("🤖 <b>AI 分析</b>：已關閉\n"
                 "開啟：<code>/set AI_ENABLED true</code>（要先設 AI_API_KEY）")
     if not getattr(config, "AI_API_KEY", ""):
-        return ("🤖 <b>AI 分析</b>：已開但冇 key\\n"
-                "設定：<code>/set AI_API_KEY sk-xxxx</code>\\n"
-                "模型：<code>/set AI_MODEL gpt-4o-mini</code>")
-    return (f"🤖 <b>AI 分析</b>：已開\\n模型 {getattr(config, 'AI_MODEL', '')} · "
-            f"今日已用 {calls_today()}/{getattr(config, 'AI_MAX_CALLS_PER_DAY', 12)} 次\\n"
-            f"用途：傷停／輪換風險否決、注項註記（唔會自己改機率）")
+        return ("🤖 <b>AI 分析</b>：已開但冇 key\n"
+                "設定：<code>/set AI_API_KEY sk-xxxx</code>")
+    used = calls_today()
+    cap = int(getattr(config, "AI_MAX_CALLS_PER_DAY", 12))
+    tok = tokens_today()
+    return (f"🤖 <b>AI 分析</b>：已開\n"
+            f"模型 {getattr(config, 'AI_MODEL', '')}\n"
+            f"今日：{used}/{cap} 次 · {tok} tokens\n"
+            f"用途：只對準備落注嘅注做風險否決（有快取，同一注唔會問兩次）")
 
 
 def test_call():
     if not enabled():
         return status_text()
     try:
-        out = chat([{"role": "user", "content": "回覆兩個字：正常"}], json_mode=False, timeout=25)
-        return f"✅ AI 連線正常：{out.strip()[:40]}\\n\\n" + status_text()
-    except Exception as e:                                        # noqa: BLE001
-        return f"⚠️ AI 連線失敗：{str(e)[:120]}\\n\\n" + status_text()
+        out = chat([{"role": "user", "content": "回覆兩個字：正常"}], json_mode=False, timeout=25,
+                   max_tokens=10)
+        return f"✅ AI 連線正常：{out.strip()[:20]}\n\n" + status_text()
+    except Exception as e:                                       # noqa: BLE001
+        return f"⚠️ AI 連線失敗：{str(e)[:120]}\n\n" + status_text()

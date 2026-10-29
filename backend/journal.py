@@ -249,3 +249,27 @@ def kill_switch(mode="paper"):
                      f"已關閉自動跟注。檢查完打 /resume 重開。")
         return {"fired": True, "roi": roi, "n": len(rows)}
     return {"fired": False, "roi": roi, "n": len(rows)}
+
+
+def ai_review_today():
+    """每日一次 AI 賽後檢討（唔逐注問，省 token）。"""
+    import ai
+    start, _ = day_bounds_hk()
+    rows = db.q("""SELECT b.market, b.line, b.selection, b.odds_taken, b.status, b.stake, b.payout,
+                          f.home_team, f.away_team
+                   FROM bets b LEFT JOIN fixtures f ON f.match_id=b.match_id
+                   WHERE b.status IN ('won','lost','push') AND b.settled_at>=?
+                   ORDER BY b.id DESC LIMIT 30""", (start.strftime("%Y-%m-%d %H:%M:%S"),))
+    if not rows:
+        return None
+    feed = [(f"{r['home_team']} vs {r['away_team']} {r['market']} {r['line'] or ''} {r['selection']} @{r['odds_taken'] or 0:.2f}",
+             r["status"], r["stake"] or 0, r["payout"] or 0) for r in rows]
+    out = ai.daily_review(feed)
+    if not out:
+        return None
+    lines = ["🧠 <b>AI 賽後檢討</b>"]
+    for pt in (out.get("points") or [])[:5]:
+        lines.append("• " + notifier.esc(str(pt))[:120])
+    if out.get("avoid"):
+        lines.append("🚫 明日避免：" + "、".join(notifier.esc(str(x))[:30] for x in out["avoid"][:3]))
+    return "\n".join(lines)
