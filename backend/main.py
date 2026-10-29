@@ -85,6 +85,7 @@ def run_due_jobs(now):
     if minute in parse_csv_ints(config.SETTLE_MINUTE):
         _job("mark_closing", scanner.mark_closing)
         _job("settle", lambda: journal.daily_settle())
+        _job("kill_switch", journal.kill_switch)
 
     # 4. the actual scan: every 5 minutes, window = T-60 .. T-3
     if minute % 5 == 0:

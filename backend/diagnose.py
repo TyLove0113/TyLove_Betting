@@ -2,6 +2,7 @@
 from datetime import timedelta
 
 import db
+import notifier
 from timeutil import now_hk
 
 SETTLED = ("won", "lost", "push", "void")
@@ -105,3 +106,38 @@ def report(mode="paper", days=60):
                        f"@{(r['odds_taken'] or 0):.2f} ${(r['payout'] or 0) - (r['stake'] or 0):+.0f}")
 
     return {"ok": True, "summary": a, "text": "\n".join(out), "rows": rows}
+
+
+def coverage():
+    """模型到底用咗幾多球隊資料（唔係靠猜）。"""
+    import features
+    tm = db.q("SELECT COUNT(*) c FROM team_matches", one=True)["c"]
+    pr = db.q("""SELECT COUNT(*) n, SUM(baseline) b FROM predictions""", one=True) or {}
+    n, b = (pr.get("n") or 0), (pr.get("b") or 0)
+    rows = db.q("""SELECT * FROM fixtures WHERE status!='finished'
+                   ORDER BY kickoff_hk LIMIT 60""")
+    thin = ok = 0
+    sample = []
+    for f in rows:
+        att_h, def_h, att_a, def_a, meta = features.strength_for_match(
+            f["home_team"], f["away_team"], f.get("league") or "")
+        if meta.get("thin"):
+            thin += 1
+        else:
+            ok += 1
+        if len(sample) < 3:
+            sample.append((f, meta, att_h, def_h, att_a, def_a))
+    out = ["🧠 <b>模型資料覆蓋</b>",
+           f"隊史記錄：<b>{tm}</b> 場"
+           + ("　⚠️ 空白 → 全部隊都用聯賽平均" if tm < 200 else ""),
+           f"已存預測：{n} 條，其中用聯賽平均（baseline）：{b}"
+           + (f"（{b / n * 100:.0f}%）" if n else ""),
+           f"今日/未來 {len(rows)} 場：有隊史 {ok} 場 · 資料不足 {thin} 場", ""]
+    for f, meta, ah, dh, aa, da in sample:
+        out.append(f"{notifier.esc(f['home_team'])} vs {notifier.esc(f['away_team'])}"
+                   f"（隊史 {meta['home_played']}/{meta['away_played']} 場）")
+        out.append(f"　攻 {ah:.2f} 守 {dh:.2f} ｜ 攻 {aa:.2f} 守 {da:.2f}"
+                   f"　聯賽平均 {meta.get('league_avg', 0):.2f} 球")
+    if tm < 200:
+        out += ["", "👉 打 <code>/backfill 120</code> 匯入歷史賽果，才會有真隊強度。"]
+    return "\n".join(out)

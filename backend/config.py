@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.9.1"
+VERSION = "1.11.1"
 
 
 def _version_from_file():
@@ -138,6 +138,14 @@ MIN_MODEL_P = _env("MIN_MODEL_P", 0.30, float)                # 模型機率下�
 MAX_BETS_PER_MATCH = _env("MAX_BETS_PER_MATCH", 1, int)       # 同一場最多幾注
 MIN_ODDS = _env("MIN_ODDS", 1.90, float)                       # ignore short prices (1.71 細水長期打唔贏)
 BLOCK_SELECTIONS = _env("BLOCK_SELECTIONS", "HAD:D,TTG:OVER", str)   # 停用組合（用逗號分隔，空白＝全開）
+AI_ENABLED = _env("AI_ENABLED", False, bool)                  # 可選 AI 層（預設關）
+AI_API_KEY = _env("AI_API_KEY", "", str)
+AI_BASE_URL = _env("AI_BASE_URL", "https://api.openai.com/v1", str)
+AI_MODEL = _env("AI_MODEL", "gpt-4o-mini", str)
+AI_MAX_CALLS_PER_DAY = _env("AI_MAX_CALLS_PER_DAY", 12, int)
+KILL_SWITCH = _env("KILL_SWITCH", True, bool)                  # 連續蝕錢自動停手
+KILL_WINDOW = _env("KILL_WINDOW", 30, int)                     # 睇最近幾多注
+KILL_ROI = _env("KILL_ROI", -0.10, float)                      # 低過呢個 ROI 就停
 MAX_EV_ACCEPT = _env("MAX_EV_ACCEPT", 0.60, float)             # >60% edge => almost certainly a stale/bad price
 UNITS_PER_BET_PCT = _env("UNITS_PER_BET_PCT", 1.0, float)      # % of bankroll per bet (flat mode)
 STAKING_MODE = _env("STAKING_MODE", "flat", str)               # flat | kelly | half_kelly

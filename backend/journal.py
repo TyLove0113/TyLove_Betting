@@ -226,3 +226,26 @@ def value_bets_today(order="ev"):
         best[k] = r
         out.append(r)
     return out
+
+
+def kill_switch(mode="paper"):
+    """最近 N 注 ROI 差過門檻 → 自動關 AUTO_FOLLOW 並通知。"""
+    import config, settings_store, notifier
+    if not getattr(config, "KILL_SWITCH", False):
+        return {"fired": False, "reason": "disabled"}
+    n = int(getattr(config, "KILL_WINDOW", 30))
+    rows = db.q("""SELECT status, stake, payout FROM bets
+                   WHERE mode=? AND status IN ('won','lost','push')
+                   ORDER BY id DESC LIMIT ?""", (mode, n))
+    if len(rows) < max(10, n // 2):
+        return {"fired": False, "reason": "樣本不足", "n": len(rows)}
+    staked = sum(r["stake"] or 0 for r in rows)
+    ret = sum(r["payout"] or 0 for r in rows)
+    roi = (ret - staked) / staked if staked else 0
+    if roi <= getattr(config, "KILL_ROI", -0.10):
+        settings_store.set_value("AUTO_FOLLOW", "false")
+        notifier.push(f"🛑 <b>自動停手</b>\n最近 {len(rows)} 注 ROI {roi*100:+.1f}%"
+                     f"（門檻 {getattr(config, 'KILL_ROI', -0.1)*100:.0f}%）\n"
+                     f"已關閉自動跟注。檢查完打 /resume 重開。")
+        return {"fired": True, "roi": roi, "n": len(rows)}
+    return {"fired": False, "roi": roi, "n": len(rows)}

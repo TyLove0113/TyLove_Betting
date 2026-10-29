@@ -29,6 +29,18 @@ TUNABLE = {
     "ODDS_MOVE_ALERT": float,
     "TELEGRAM_CHAT_ID": str,
     "MARKETS": str,
+    "AI_BASE_URL": str,
+    "AI_MAX_CALLS_PER_DAY": int,
+    "AI_MODEL": str,
+    "AI_API_KEY": str,
+    "AI_ENABLED": bool,
+    "KILL_ROI": float,
+    "KILL_WINDOW": int,
+    "KILL_SWITCH": bool,
+    "BLOCK_SELECTIONS": str,
+    "MAX_BETS_PER_MATCH": int,
+    "MIN_MODEL_P": float,
+    "MODEL_MARKET_BLEND": float,
 }
 
 

@@ -1,3 +1,21 @@
+# HKJC 足球價值投注系統 v1.11.1
+- /status 加「模組／指令」檢查行：唔再單靠版本字串判斷有冇更新成功
+- 版本字串其實讀根目錄 VERSION.txt，所以要一齊覆蓋
+
+# HKJC 足球價值投注系統 v1.11.0
+- 新增可選 AI 層（ai.py，OpenAI 兼容 API，預設關閉）
+- AI 只做否決／註記：risk=high 就唔落注，理由寫入注單；唔會改機率
+- /ai 睇狀態、/ai test 測試連線；每日 call 上限 AI_MAX_CALLS_PER_DAY=12
+
+# HKJC 足球價值投注系統 v1.10.0
+- /model：顯示模型資料覆蓋（隊史幾場、幾多預測用聯賽平均、樣本 λ）
+- 含 v1.9.1 背景 /backfill、v1.9.2 /pause + 自動停手
+
+# HKJC 足球價值投注系統 v1.9.2
+- /pause /resume：一鍵暫停／重開自動跟注
+- 自動停手（kill switch）：最近 30 注 ROI ≤ -10% → 自動關 AUTO_FOLLOW 並通知
+- /set 可調：MODEL_MARKET_BLEND、MIN_MODEL_P、MAX_BETS_PER_MATCH、BLOCK_SELECTIONS、KILL_*
+
 # HKJC 足球價值投注系統 v1.9.1
 - /backfill 改為背景執行：即刻回覆「收到」，跑完推送結果，唔會卡住機械人
 - /backfill 上限 120 日，預設 30 日

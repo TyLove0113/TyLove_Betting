@@ -48,7 +48,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 /result &lt;id&gt; &lt;主-客&gt; － 人手入賽果（例：/result 3 2-1）
 
 <b>🔬 分析同改進</b>
-/diag [real] [日數] － 診斷：命中率 vs 模型／按盤口／EV／賠率分組
+/ai [test] － AI 分析層狀態（可選）\n/model － 模型用咗幾多球隊資料（覆蓋率）\n/diag [real] [日數] － 診斷：命中率 vs 模型／按盤口／EV／賠率分組
 /backfill [日數|起 止] － 匯入歷史賽果（訓練模型，例：/backfill 60）
 
 <b>📊 成績</b>
@@ -66,7 +66,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 /sim A vs B － 即時試算任何兩隊（唔需要賠率）
 /ratings [隊數] － 球隊強度排名
 /settings － 睇現時參數
-/set KEY VALUE － 改參數（例如 /set EV_THRESHOLD 0.06）
+/pause /resume － 暫停／重開自動跟注\n/set KEY VALUE － 改參數（例如 /set EV_THRESHOLD 0.06）
 /help － 呢個清單
 """
 
@@ -306,6 +306,14 @@ def dispatch(text):
         return ("⏳ 收到，背景開始匯入歷史賽果（1–8 分鐘）。\n"
                 "完成會自動通知你，期間可以繼續用其他指令。"), None
 
+    if cmd == "/ai":
+        import ai
+        return (ai.test_call() if (args and args[0] == "test") else ai.status_text()), None
+
+    if cmd == "/model":
+        import diagnose
+        return diagnose.coverage(), None
+
     if cmd == "/diag":
         import diagnose
         mode = "real" if (args and args[0].lower() in ("real", "真", "真實")) else "paper"
@@ -325,6 +333,12 @@ def dispatch(text):
     if cmd == "/settings":
         d = settings_store.dump()
         return "⚙️ <b>現時參數</b>\n" + "\n".join(f"{k} = {v}" for k, v in d.items()), None
+
+    if cmd in ("/pause", "/resume"):
+        import settings_store
+        want = "true" if cmd == "/resume" else "false"
+        settings_store.set_value("AUTO_FOLLOW", want)
+        return ("▶️ 已重開自動跟注。" if want == "true" else "⏸ 已暫停自動跟注（只提示，唔會落注）。"), None
 
     if cmd == "/set" and len(args) >= 2:
         key = args[0].upper()
@@ -484,7 +498,16 @@ def _cmd_status():
     odds = db.last_job("refresh_odds")
     jp = journal.summary(mode="paper")
     jr = journal.summary(mode="real")
+    mods = []
+    for _m in ("ai", "diagnose", "live", "settlement"):
+        try:
+            __import__(_m)
+            mods.append(f"{_m}✅")
+        except Exception:                                        # noqa: BLE001
+            mods.append(f"{_m}✖")
+    _has = lambda c: "✅" if c in HELP else "✖"
     out = [f"🟢 <b>系統狀態</b> v{s['version']} · 香港時間 {now_hk().strftime('%Y-%m-%d %H:%M')}",
+           f"模組：{' '.join(mods)}　指令：/model{_has('/model')} /ai{_has('/ai')} /diag{_has('/diag')}",
            f"市場：{','.join(s['markets'])} · EV 門檻 {s['ev_threshold']*100:.1f}% · "
            f"注碼模式 {s['staking_mode']} · 自動跟注 {'開' if s['auto_follow'] else '關'}",
            f"上次同步賽程：{sync['ts'] if sync else '未跑'}（{sync['status'] if sync else '-'}）",

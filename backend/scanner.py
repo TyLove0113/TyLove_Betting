@@ -199,6 +199,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                            ORDER BY kickoff_hk""", (start, end))
 
     checked, picked, booked = 0, [], []
+    _ai_veto = []
     can_bet, why = staking.risk_check("paper")
     auto_ok, auto_why = can_bet, why
     recent = _recent_keys()
@@ -263,14 +264,29 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                 sum(1 for x in booked if x["row"]["match_id"] == row["match_id"])
             if _per_match >= getattr(config, "MAX_BETS_PER_MATCH", 1):
                 continue
+            _ai_note = ""
+            try:
+                import ai as _ai
+                if _ai.enabled():
+                    _v = _ai.assess(f["home_team"], f["away_team"], f.get("league") or "",
+                                    row["market"], row["selection"], row["line"], f["kickoff_hk"])
+                    if _v:
+                        row["ai"] = _v
+                        if _v["risk"] == "high":        # AI 明確反對就唔落
+                            _ai_veto.append({"row": row, "reason": _v["reason"]})
+                            continue
+                        _ai_note = f"AI:{_v['risk']} {_v['reason']}"
+            except Exception:                        # noqa: BLE001
+                pass
             if config.AUTO_FOLLOW and can_bet and not dry_run and key not in open_paper:
-                bet_id = staking.record_bet(row, mode="paper", stake=stake, note="auto-follow")
+                bet_id = staking.record_bet(row, mode="paper", stake=stake, note=_ai_note or "auto-follow")
                 if bet_id:                      # None = 已經有同一張注單，唔重複落
                     booked.append({"bet_id": bet_id, "row": row})
                     can_bet, why = staking.risk_check("paper")
 
     summary = {"checked": checked, "picked": len(picked), "booked": len(booked),
-               "reason": why, "at": now.strftime("%Y-%m-%d %H:%M")}
+               "reason": why, "at": now.strftime("%Y-%m-%d %H:%M"),
+               "ai_veto": len(_ai_veto)}
     db.log_job("scan", "ok", str(summary))
     if push and picked:
         _txt = _format_picks(picked, booked, summary, open_paper, auto_ok, auto_why)
