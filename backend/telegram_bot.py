@@ -361,11 +361,12 @@ def dispatch(text):
         return journal.weekly_report(push=False), None
 
     if cmd == "/settings":
-        d = settings_store.dump()
+        import settings_store as _ss
+        d = _ss.dump()
         return "⚙️ <b>現時參數</b>\n" + "\n".join(f"{k} = {v}" for k, v in d.items()), None
 
     if cmd in ("/pause", "/resume"):
-        import settings_store
+        import settings_store  # noqa: F401  (同 /settings 共用，避免 UnboundLocalError)
         want = "true" if cmd == "/resume" else "false"
         settings_store.set_value("AUTO_FOLLOW", want)
         if want == "true":

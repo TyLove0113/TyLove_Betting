@@ -3,6 +3,7 @@
 """
 import config
 import db
+import notifier
 from timeutil import now_hk, today_hk, day_bounds_hk, parse_hk, to_hk, fmt_hk
 from scanner import MARKET_LABEL, SEL_LABEL
 

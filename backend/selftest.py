@@ -1,58 +1,70 @@
-"""One-shot self test: seed demo data -> scan -> book -> settle -> report.
-Run:  python selftest.py
+"""自測：逐個指令跑一次，捉 NameError / 邏輯錯誤（唔會 send Telegram）。
+
+用法：
+    python3 selftest.py            # 用臨時 DB，唔會影響你真正嘅資料
+    DB_PATH=/data/football.db python3 selftest.py   # 想用真資料（唯讀指令較安全）
 """
-import json
 import os
 import sys
+import tempfile
+import traceback
+
+if "--keep-db" not in sys.argv:
+    os.environ.setdefault("DB_PATH", os.path.join(tempfile.mkdtemp(), "selftest.db"))
+os.environ["AUTO_FOLLOW"] = "false"          # 自測唔好落注
+os.environ["TELEGRAM_BOT_TOKEN"] = ""        # 自測唔好發訊息
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import config
-import db
-import settings_store
+import db          # noqa: E402
+import telegram_bot as tb   # noqa: E402
+
+CMDS = [
+    "/help", "/status", "/model", "/ai", "/diag", "/roi", "/report",
+    "/open", "/live", "/value", "/fixtures", "/ratings", "/settings",
+    "/why", "/bet", "/log", "/settle",
+]
 
 
 def main():
-    config.DRY_RUN = False
     db.init_db()
-    settings_store.apply_overrides()
-    config.AUTO_FOLLOW = True
-
-    import demo_data
-    demo_data.seed(force=True)
-
-    import scanner
-    out = scanner.scan(push=False)
-    print("\n=== SCAN ===")
-    print(json.dumps(out["summary"], ensure_ascii=False))
-    for p in out["picks"]:
-        print(f"  {p['fixture']['home_team']} vs {p['fixture']['away_team']} "
-              f"{p['market']} {p['line']} {p['selection']} @{p['hkjc_odds']:.2f} EV {p['ev_pct']*100:+.1f}%")
-
-    # settle with realistic scores drawn from each match's own lambdas
-    import settlement
-    import features
-    import poisson
-    import random
-    rnd = random.Random(11)
-    open_matches = db.q("SELECT DISTINCT b.match_id, f.home_team, f.away_team, f.league "
-                        "FROM bets b JOIN fixtures f ON f.match_id=b.match_id WHERE b.status='open'")
-    for r in open_matches:
-        att_h, def_h, att_a, def_a, meta = features.strength_for_match(
-            r["home_team"], r["away_team"], r["league"])
-        pred = poisson.predict(att_h, def_h, att_a, def_a, league_avg_goals=meta.get("league_avg"))
-        hg = demo_data._poisson(pred["lam_home"], rnd)
-        ag = demo_data._poisson(pred["lam_away"], rnd)
-        settlement.enter_result(r["match_id"], hg, ag, source="selftest")
-
-    import journal
-    print("\n=== REPORT ===")
-    print(journal.report_text(days=1))
-    s = journal.summary(mode="paper")
-    assert s["bets"] > 0, "no bets were booked - check AUTO_FOLLOW / risk limits"
-    assert s["graded"] > 0, "no bets were settled"
-    print("\nSELFTEST OK")
+    ok = 0
+    bad = []
+    for c in CMDS:
+        try:
+            out = tb.dispatch(c)
+            text = out[0] if isinstance(out, tuple) else out
+            if not text or not str(text).strip():
+                raise AssertionError("回覆係空")
+            print(f"✅ {c:12} {len(str(text)):5} 字")
+            ok += 1
+        except Exception as e:                                   # noqa: BLE001
+            bad.append((c, e))
+            print(f"❌ {c:12} {type(e).__name__}: {e}")
+            traceback.print_exc(limit=3)
+    for job in ("ai_review_today", "daily_settle", "summary"):
+        try:
+            fn = getattr(__import__("journal"), job)
+            fn() if job != "summary" else fn(mode="paper")
+            print(f"✅ job {job}")
+            ok += 1
+        except Exception as e:                                   # noqa: BLE001
+            bad.append((job, e))
+            print(f"❌ job {job}: {type(e).__name__}: {e}")
+            traceback.print_exc(limit=3)
+    try:
+        import journal
+        journal.kill_switch()
+        print("✅ job kill_switch")
+        ok += 1
+    except Exception as e:                                       # noqa: BLE001
+        bad.append(("kill_switch", e))
+        print(f"❌ job kill_switch: {type(e).__name__}: {e}")
+    print(f"\n完成：{ok} 項通過，{len(bad)} 項失敗")
+    if bad:
+        print("失敗清單：" + ", ".join(c for c, _ in bad))
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

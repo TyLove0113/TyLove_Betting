@@ -1,3 +1,8 @@
+# HKJC 足球價值投注系統 v1.14.1
+- 修 journal.ai_review_today 的 NameError（缺 import notifier）→ AI 賽後檢討不再爆錯
+- 修 /settings 的 UnboundLocalError
+- 新增 selftest.py：一次跑 21 項指令／排程自檢（python3 selftest.py）
+
 # HKJC 足球價值投注系統 v1.14.0
 - 修好「/resume 之後即刻又停手」死循環：重開後只計新結算嘅注，夠 KILL_MIN_N（預設 10）注才再評估
 - 停手通知只發一次（唔再每 30 分鐘洗版）
