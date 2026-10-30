@@ -290,3 +290,27 @@ def ai_review_today():
     if out.get("avoid"):
         lines.append("🚫 明日避免：" + "、".join(notifier.esc(str(x))[:30] for x in out["avoid"][:3]))
     return "\n".join(lines)
+
+
+def kill_status(mode="paper"):
+    """睇停手機制現況：窗口、樣本、ROI、門檻（唔會改任何嘢）。"""
+    import config
+    n = int(getattr(config, "KILL_WINDOW", 30))
+    floor = db.get_setting("KILL_RESUME_AT") or ""
+    sql = """SELECT status, stake, payout FROM bets
+             WHERE mode=? AND status IN ('won','lost','push')"""
+    args = [mode]
+    if floor:
+        sql += " AND IFNULL(settled_at,'') >= ?"
+        args.append(floor)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(n)
+    rows = db.q(sql, tuple(args))
+    staked = sum(r["stake"] or 0 for r in rows)
+    ret = sum(r["payout"] or 0 for r in rows)
+    roi = (ret - staked) / staked if staked else None
+    return {"enabled": bool(getattr(config, "KILL_SWITCH", False)),
+            "auto_follow": bool(getattr(config, "AUTO_FOLLOW", True)),
+            "floor": floor, "n": len(rows), "need": int(getattr(config, "KILL_MIN_N", 10)),
+            "roi": roi, "threshold": float(getattr(config, "KILL_ROI", -0.10)),
+            "window": n, "staked": staked, "returned": ret}

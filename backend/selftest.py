@@ -22,7 +22,7 @@ import telegram_bot as tb   # noqa: E402
 CMDS = [
     "/help", "/status", "/model", "/ai", "/diag", "/roi", "/report",
     "/open", "/live", "/value", "/fixtures", "/ratings", "/settings",
-    "/why", "/bet", "/log", "/settle",
+    "/why", "/kill", "/review", "/bet", "/log", "/settle",
 ]
 
 

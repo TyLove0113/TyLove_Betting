@@ -38,7 +38,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 
 <b>💎 價值同落注</b>
 /value － 今日價值清單（EV 排序）
-/scan － 即刻重新掃描（唔等排程）\n/why － 解釋今次掃描：每個篩選條件擋走幾多
+/scan － 即刻重新掃描（唔等排程）\n/review － 即刻跑一次 AI 賽後檢討（手動）\n/kill － 睇停手檢查現況\n/why － 解釋今次掃描：每個篩選條件擋走幾多
 /bet － 今日注項＋一撳記錄真實注
 /bet &lt;id&gt; &lt;注碼&gt; [@賠率] － 記錄真實注（例：/bet 38 10 @4.75）
 /edit &lt;R38&gt; &lt;注碼&gt; [@賠率] － 改金額／賠率
@@ -233,6 +233,37 @@ def dispatch(text):
 
     if cmd == "/value":
         return _cmd_value("time" if "time" in text.lower().split() else "ev")
+
+    if cmd == "/review":
+        try:
+            import ai
+            if not ai.enabled():
+                return ("⚠️ AI 未開啟或未設 key。\n"
+                        "網頁「⚙️ 設定」勾 AI 開啟並填 key，或 /set AI_API_KEY sk-... 然後 /set AI_ENABLED true"), None
+            t = journal.ai_review_today()
+            if not t:
+                return "今日暫時冇已結算注，或者 AI 回覆為空（打 /ai 睇有冇錯誤紀錄）。", None
+            return t, None
+        except Exception as e:                                   # noqa: BLE001
+            notifier.push_error("ai_review", e)
+            return f"⚠️ 檢討失敗：{notifier.esc(str(e))[:160]}", None
+
+    if cmd == "/kill":
+        k = journal.kill_status("paper")
+        lines = ["🛑 <b>停手檢查</b>",
+                 f"開關：{'開' if k['enabled'] else '關'}　自動跟注：{'開' if k['auto_follow'] else '關'}",
+                 f"窗口：最近 {k['window']} 注　樣本：{k['n']}／需要 {k['need']}"]
+        lines.append(f"窗口 ROI：{k['roi']*100:+.1f}%（門檻 {k['threshold']*100:.0f}%）"
+                     if k['roi'] is not None else "窗口 ROI：—（未有已結算注）")
+        if k["floor"]:
+            lines.append(f"重開時間：{k['floor']}（只計之後結算嘅注）")
+        if k["roi"] is not None and k["roi"] <= k["threshold"] and k["n"] >= k["need"]:
+            lines.append("➡️ 現況會觸發停手")
+        elif k["n"] < k["need"]:
+            lines.append(f"➡️ 樣本未夠（差 {k['need'] - k['n']} 注），暫時唔會停")
+        else:
+            lines.append("➡️ ROI 未穿門檻，繼續運行")
+        return "\n".join(lines), None
 
     if cmd == "/why":
         T = {}

@@ -1,3 +1,10 @@
+# HKJC 足球價值投注系統 v1.14.2
+- 新增 /review：手動即刻跑一次 AI 賽後檢討（唔使等 23:50）
+- 新增 /kill：睇停手檢查現況（窗口／樣本／ROI／門檻／重開時間），唔使靠猜
+- 修 journal.py 缺 import notifier（AI 檢討 TypeError/NameError）
+- 修 /settings UnboundLocalError
+- selftest.py：23 項指令自測
+
 # HKJC 足球價值投注系統 v1.14.1
 - 修 journal.ai_review_today 的 NameError（缺 import notifier）→ AI 賽後檢討不再爆錯
 - 修 /settings 的 UnboundLocalError
