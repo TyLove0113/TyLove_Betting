@@ -45,6 +45,7 @@ TUNABLE = {
 
 
 def coerce(key, value):
+    value = _clean(value)
     cast = TUNABLE.get(key)
     if cast is None:
         return str(value)
@@ -72,6 +73,13 @@ def apply_overrides():
         except (TypeError, ValueError):
             continue
     return applied
+
+
+def _clean(v):
+    v = str(v).strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1].strip()
+    return v
 
 
 def set_value(key, value):

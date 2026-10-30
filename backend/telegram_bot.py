@@ -38,7 +38,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 
 <b>💎 價值同落注</b>
 /value － 今日價值清單（EV 排序）
-/scan － 即刻重新掃描（唔等排程）
+/scan － 即刻重新掃描（唔等排程）\n/why － 解釋今次掃描：每個篩選條件擋走幾多
 /bet － 今日注項＋一撳記錄真實注
 /bet &lt;id&gt; &lt;注碼&gt; [@賠率] － 記錄真實注（例：/bet 38 10 @4.75）
 /edit &lt;R38&gt; &lt;注碼&gt; [@賠率] － 改金額／賠率
@@ -234,6 +234,34 @@ def dispatch(text):
     if cmd == "/value":
         return _cmd_value("time" if "time" in text.lower().split() else "ev")
 
+    if cmd == "/why":
+        T = {}
+        import scanner as _sc
+        r = _sc.scan(min_minutes=-90, max_minutes=900, dry_run=True, push=False, trace=T)
+        sm = r["summary"]
+        rows = [f"🔎 <b>為何冇注／點分析</b>",
+                f"未來時段 {T.get('window', 0)} 場有賠率（冇賠率 {T.get('no_odds', 0)} 場跳過）",
+                f"模型計出候選 {T.get('cand', 0)} 個（含唔值博）", ""]
+        rows += [
+            f"· 唔夠 EV（<{config.EV_THRESHOLD*100:.0f}%）：{T.get('value', 0)}",
+            f"· 賠率 < {config.MIN_ODDS:.2f}：{T.get('odds_low', 0)}",
+            f"· 賠率 > {getattr(config, 'MAX_ODDS', 99):.2f}：{T.get('odds_high', 0)}",
+            f"· 機率 < {getattr(config, 'MIN_MODEL_P', 0)*100:.0f}%：{T.get('min_p', 0)}",
+            f"· 封鎖組合（{getattr(config, 'BLOCK_SELECTIONS', '') or '無'}）：{T.get('sel_block', 0)}",
+            f"· 已經落過注：{T.get('booked_dup', 0)}",
+            f"· 同場已滿 1 注：{T.get('per_match', 0)}",
+            f"· AI 否決：{T.get('veto', 0)}",
+            "",
+            f"結果：過閘 {sm['picked']} 個 · 落注 {sm['booked']} 注",
+        ]
+        ob, why = staking.risk_check("paper")
+        rows.append(f"自動跟注：{'開' if config.AUTO_FOLLOW else '關'}"
+                    + ("" if ob else f"（被擋：{why}）"))
+        if sm['picked'] == 0:
+            rows += ["", "👉 全部候選都過唔到閘，即係今日冇「值得買」嘅注。呢個係正常，唔係壞。",
+                     "想放寬：/set EV_THRESHOLD 0.04 或 /set BLOCK_SELECTIONS \"\""]
+        return "\n".join(rows), None
+
     if cmd == "/scan":
         s = scanner.scan()
         return (f"🔍 掃描完成：睇 {s['summary']['checked']} 場，"
@@ -308,7 +336,9 @@ def dispatch(text):
 
     if cmd == "/ai":
         import ai
-        return (ai.test_call() if (args and args[0] == "test") else ai.status_text()), None
+        if args and args[0] == "test":
+            return ai.test_call(), None
+        return ai.status_text() + "\n\n" + ai.usage_report(), None
 
     if cmd == "/model":
         import diagnose
@@ -338,7 +368,13 @@ def dispatch(text):
         import settings_store
         want = "true" if cmd == "/resume" else "false"
         settings_store.set_value("AUTO_FOLLOW", want)
-        return ("▶️ 已重開自動跟注。" if want == "true" else "⏸ 已暫停自動跟注（只提示，唔會落注）。"), None
+        if want == "true":
+            ts = now_hk().strftime("%Y-%m-%d %H:%M:%S")
+            db.set_setting("KILL_RESUME_AT", ts)
+            return (f"▶️ 已重開自動跟注（{ts}）。\n"
+                    f"停手檢查改為只計「{ts} 之後結算」嘅注，夠 {int(getattr(config, 'KILL_MIN_N', 10))} 注才會再評估，"
+                    f"唔會即刻再停。"), None
+        return "⏸ 已暫停自動跟注（只提示，唔會落注）。", None
 
     if cmd == "/set" and len(args) >= 2:
         key = args[0].upper()

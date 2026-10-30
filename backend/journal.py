@@ -229,25 +229,41 @@ def value_bets_today(order="ev"):
 
 
 def kill_switch(mode="paper"):
-    """最近 N 注 ROI 差過門檻 → 自動關 AUTO_FOLLOW 並通知。"""
+    """最近 N 注 ROI 差過門檻 → 自動關 AUTO_FOLLOW 並通知。
+
+    /resume 之後只計「之後才結算」嘅注，而且要夠少少樣本才再觸發，
+    唔會一 resume 就即刻再停（舊數永遠唔會變好）。
+    """
     import config, settings_store, notifier
     if not getattr(config, "KILL_SWITCH", False):
         return {"fired": False, "reason": "disabled"}
     n = int(getattr(config, "KILL_WINDOW", 30))
-    rows = db.q("""SELECT status, stake, payout FROM bets
-                   WHERE mode=? AND status IN ('won','lost','push')
-                   ORDER BY id DESC LIMIT ?""", (mode, n))
-    if len(rows) < max(10, n // 2):
-        return {"fired": False, "reason": "樣本不足", "n": len(rows)}
+    floor = db.get_setting("KILL_RESUME_AT") or ""
+    sql = ("""SELECT status, stake, payout, settled_at FROM bets
+              WHERE mode=? AND status IN ('won','lost','push')""")
+    args = [mode]
+    if floor:
+        sql += " AND IFNULL(settled_at,'') >= ?"
+        args.append(floor)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(n)
+    rows = db.q(sql, tuple(args))
+    need = int(getattr(config, "KILL_MIN_N", 10))
+    if floor:
+        need = max(need, 5)
+    if len(rows) < need:
+        return {"fired": False, "reason": "樣本不足", "n": len(rows), "need": need}
     staked = sum(r["stake"] or 0 for r in rows)
     ret = sum(r["payout"] or 0 for r in rows)
     roi = (ret - staked) / staked if staked else 0
     if roi <= getattr(config, "KILL_ROI", -0.10):
+        already_off = not bool(getattr(config, "AUTO_FOLLOW", True))
         settings_store.set_value("AUTO_FOLLOW", "false")
-        notifier.push(f"🛑 <b>自動停手</b>\n最近 {len(rows)} 注 ROI {roi*100:+.1f}%"
-                     f"（門檻 {getattr(config, 'KILL_ROI', -0.1)*100:.0f}%）\n"
-                     f"已關閉自動跟注。檢查完打 /resume 重開。")
-        return {"fired": True, "roi": roi, "n": len(rows)}
+        if not already_off:                      # 只通知一次，唔好每 30 分鐘洗版
+            notifier.push(f"🛑 <b>自動停手</b>\n最近 {len(rows)} 注 ROI {roi*100:+.1f}%"
+                          f"（門檻 {getattr(config, 'KILL_ROI', -0.1)*100:.0f}%）\n"
+                          f"已關閉自動跟注。檢查完打 /resume 重開（重開後只計新注）。")
+        return {"fired": True, "roi": roi, "n": len(rows), "already_off": already_off}
     return {"fired": False, "roi": roi, "n": len(rows)}
 
 

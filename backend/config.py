@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 
 
 def _version_from_file():
@@ -145,6 +145,7 @@ AI_BASE_URL = _env("AI_BASE_URL", "https://api.openai.com/v1", str)
 AI_MODEL = _env("AI_MODEL", "gpt-4o-mini", str)
 AI_MAX_CALLS_PER_DAY = _env("AI_MAX_CALLS_PER_DAY", 12, int)
 KILL_SWITCH = _env("KILL_SWITCH", True, bool)                  # 連續蝕錢自動停手
+KILL_MIN_N = _env("KILL_MIN_N", 10, int)                       # 最少幾注才評估停手
 KILL_WINDOW = _env("KILL_WINDOW", 30, int)                     # 睇最近幾多注
 KILL_ROI = _env("KILL_ROI", -0.10, float)                      # 低過呢個 ROI 就停
 MAX_EV_ACCEPT = _env("MAX_EV_ACCEPT", 0.60, float)             # >60% edge => almost certainly a stale/bad price

@@ -17,6 +17,9 @@ import db
 from timeutil import now_hk
 
 
+_LAST_TOKENS = [0]
+
+
 def enabled():
     return bool(getattr(config, "AI_ENABLED", False) and getattr(config, "AI_API_KEY", ""))
 
@@ -80,6 +83,7 @@ def chat(messages, json_mode=True, timeout=40, max_tokens=220):
     r.raise_for_status()
     data = r.json()
     _bump(data.get("usage"))
+    _LAST_TOKENS[0] = int((data.get("usage") or {}).get("total_tokens") or 0)
     return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
@@ -110,8 +114,12 @@ def assess(match_id, home, away, league, market, selection, line, kickoff):
             return None
         out = {"risk": risk, "reason": str(data.get("reason", ""))[:50]}
         _cache_set(k, out)
+        _log("veto", f"{home} vs {away} {market} {line or ''} {selection}",
+             risk, out["reason"], _LAST_TOKENS[0])
         return out
-    except Exception:                                            # noqa: BLE001
+    except Exception as e:                                       # noqa: BLE001
+        _log("veto", f"{home} vs {away} {market} {line or ''} {selection}",
+             ok=False, err=str(e))
         return None
 
 
@@ -138,6 +146,45 @@ def daily_review(rows):
         return data
     except Exception:                                            # noqa: BLE001
         return None
+
+
+def _esc(x):
+    return (str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _log(purpose, subject, risk="", reason="", tokens=0, ok=True, err=""):
+    try:
+        db.ex("""INSERT INTO ai_calls(ts, purpose, subject, risk, reason, tokens, ok, err)
+                 VALUES(?,?,?,?,?,?,?,?)""",
+              (now_hk().strftime("%Y-%m-%d %H:%M:%S"), purpose, subject, risk,
+               reason[:120], int(tokens or 0), 1 if ok else 0, (err or "")[:200]))
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+def recent(n=8):
+    return db.q("SELECT * FROM ai_calls ORDER BY id DESC LIMIT ?", (n,))
+
+
+def usage_report(n=8):
+    """今日用量 + 最近幾次 call（俾 /ai 同網頁用）。"""
+    out = [f"📊 <b>AI 用量</b>：今日 {calls_today()}/{int(getattr(config, 'AI_MAX_CALLS_PER_DAY', 12))} 次"
+           f" · {tokens_today()} tokens"]
+    rows = recent(n)
+    if not rows:
+        out.append("（今日暫時冇 call —— 表示未有注通過篩選，或者 AI 未開／未設 key）")
+        return "\n".join(out)
+    out.append("")
+    for r in rows:
+        mark = "✅" if r["ok"] else "❌"
+        tag = f"{r['risk']}" if r["risk"] else "-"
+        out.append(f"{mark} {r['ts'][5:16]} {_esc(r['subject'] or '')} → {tag} "
+                   f"{_esc(r['reason'] or '')} [{r['tokens']}t]")
+    bad = [r for r in rows if not r["ok"]]
+    if bad:
+        out.append("")
+        out.append(f"⚠️ 最近有 {len(bad)} 次失敗，最後錯誤：{_esc(bad[0]['err'] or '')}")
+    return "\n".join(out)
 
 
 def status_text():

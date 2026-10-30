@@ -181,7 +181,7 @@ def odds_move_watch():
 
 
 # --------------------------------------------------------------------- scan
-def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=True):
+def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=True, trace=None):
     """Find value in matches starting inside the window. Returns a dict summary."""
     lock = _acquire_scan_lock()
     if lock is None:
@@ -198,6 +198,10 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                            WHERE kickoff_hk>=? AND kickoff_hk<? AND status='scheduled'
                            ORDER BY kickoff_hk""", (start, end))
 
+    T = trace if trace is not None else {}
+    for _k in ("window", "no_odds", "cand", "value", "odds_low", "odds_high",
+               "min_p", "sel_block", "booked_dup", "per_match", "veto", "placed"):
+        T.setdefault(_k, 0)
     checked, picked, booked = 0, [], []
     _ai_veto = []
     _ai_used = 0
@@ -225,28 +229,37 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             continue
         odds_rows = db.latest_odds(f["match_id"])
         if not odds_rows:
+            T["no_odds"] += 1
             continue
         checked += 1
+        T["window"] += 1
         pred = engine.predict_fixture(f)
         priced = value.market_view(f, pred, odds_rows)
         priced.sort(key=lambda r: -(r.get("ev_pct") or 0))     # 高 EV 先處理／先問 AI
+        T["cand"] += len([r for r in priced if r["selection"] != "INFO"])
         for row in priced:
             if row["selection"] == "INFO":
                 continue
             if row["market"] not in config.MARKETS:
                 continue
             if not row["is_value"]:
+                T["value"] += 1
                 continue
             if row["hkjc_odds"] < config.MIN_ODDS:     # 太低水
+                T["odds_low"] += 1
                 continue
             if row["hkjc_odds"] > getattr(config, "MAX_ODDS", 99):   # 太冷門（等於買六合彩）
+                T["odds_high"] += 1
                 continue
             if row["model_p"] < getattr(config, "MIN_MODEL_P", 0):   # 機率太低唔值博
+                T["min_p"] += 1
                 continue
             if _blocked(row["market"], row["selection"]):   # 命中率長期唔夠嘅組合
+                T["sel_block"] += 1
                 continue
             key = (row["match_id"], row["market"], row["line"], row["selection"])
-            if key in recent or key in booked_keys:
+            if key in booked_keys:          # 已經落咗注就唔再列（避免重複落注）
+                T["booked_dup"] += 1
                 continue
             stake, frac = staking.size(row["ev_pct"], row["model_p"], row["hkjc_odds"])
             _day0 = now.strftime("%Y-%m-%d 00:00:00")
@@ -274,7 +287,10 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             _per_match = sum(1 for k in open_paper if k[0] == row["match_id"]) + \
                 sum(1 for x in booked if x["row"]["match_id"] == row["match_id"])
             if _per_match >= getattr(config, "MAX_BETS_PER_MATCH", 1):
+                T["per_match"] += 1
                 continue
+            if not (config.AUTO_FOLLOW and can_bet and not dry_run and key not in open_paper):
+                continue                       # 唔會落注就唔問 AI（慳 token）
             _ai_note = ""
             try:
                 import ai as _ai
@@ -287,6 +303,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
                         row["ai"] = _v
                         if _v["risk"] == "high":        # AI 明確反對就唔落
                             _ai_veto.append({"row": row, "reason": _v["reason"]})
+                            T["veto"] += 1
                             continue
                         _ai_note = f"AI:{_v['risk']} {_v['reason']}"
             except Exception:                        # noqa: BLE001
@@ -294,6 +311,7 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             if config.AUTO_FOLLOW and can_bet and not dry_run and key not in open_paper:
                 bet_id = staking.record_bet(row, mode="paper", stake=stake, note=_ai_note or "auto-follow")
                 if bet_id:                      # None = 已經有同一張注單，唔重複落
+                    T["placed"] += 1
                     booked.append({"bet_id": bet_id, "row": row})
                     can_bet, why = staking.risk_check("paper")
 

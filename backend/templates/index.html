@@ -31,7 +31,7 @@
       <button onclick="saveSettings()">儲存設定</button>
       <span id="setmsg" class="muted"></span>
     </div>
-    <div class="muted" style="margin-top:6px">AI 預設關閉；冇 API key 唔會用任何 token。key 只會顯示尾 4 位。</div>
+    <div class="muted" style="margin-top:6px">AI 只做「落注前風險否決」（傷停／輪換 → 該注唔落），<b>唔會自己揀隊或改機率</b>；真正落注仍由 EV／賠率規則決定。<br>AI 預設關閉；冇 API key 唔會用任何 token。key 只會顯示尾 4 位。改完記得撳「儲存設定」。</div>
   </div>
   <div class="card"><h3>賽程</h3><div id="fixtures"></div></div>
   <div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">
@@ -167,11 +167,15 @@ async function loadSettings(){
   document.getElementById('aiuse').innerHTML =
     `AI：<b>${a.enabled?'開':'關'}</b>　模型 <b>${a.model||'-'}</b>　`+
     `今日 <b>${a.calls_today}/${a.cap}</b> 次 · <b>${a.tokens_today}</b> tokens`+
-    `${a.has_key?'':'　<span class="neg">（未設 key）</span>'}`;
+    `${a.has_key?'':'　<span class="neg">（未設 key）</span>'}`+
+    (a.recent&&a.recent.length? '<div style="margin-top:6px">最近呼叫：<br>'+
+      a.recent.map(x=>`${x.ok?'✅':'❌'} ${String(x.ts).slice(5,16)} ${x.purpose||''} ${x.subject||''} → <b>${x.risk||'-'}</b> ${x.reason||''} <span class="muted">[${x.tokens}t]</span>`).join('<br>')+'</div>'
+      : '<div class="muted" style="margin-top:6px">最近冇 AI 呼叫紀錄（未有注通過篩選／AI 未開／未設 key）</div>');
   const r=await (await fetch('/api/settings')).json();
   SETS={}; r.items.forEach(x=>SETS[x.key]=x.value);
   const num=(k,label)=>`<label class="muted">${label}<br><input id="s_${k}" type="number" step="0.01" value="${SETS[k]??''}" style="width:100%"></label>`;
-  const txt=(k,label,ph='')=>`<label class="muted">${label}<br><input id="s_${k}" value="${SETS[k]??''}" placeholder="${ph}" style="width:100%"></label>`;
+  const escv=(v)=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const txt=(k,label,ph='')=>`<label class="muted">${label}<br><input id="s_${k}" value="${escv(SETS[k])}" placeholder="${ph}" style="width:100%"></label>`;
   if(!r.locked) document.getElementById('setmsg').textContent = '⚠️ 未設 DASH_TOKEN：任何人有網址都可改設定（建議 Railway 加 DASH_TOKEN）';
   document.getElementById('setbox').innerHTML =
     `<label class="muted">AI 開啟<br><input id="s_AI_ENABLED" type="checkbox" ${SETS.AI_ENABLED?'checked':''}></label>`+
@@ -181,8 +185,13 @@ async function loadSettings(){
     num('EV_THRESHOLD','EV 門檻（0.06 = 6%）')+
     num('MIN_ODDS','最低賠率')+num('MAX_ODDS','最高賠率')+
     num('MAX_BETS_PER_DAY','每日最多注數')+num('UNITS_PER_BET_PCT','每注 % 本金')+
-    `<label class="muted">AI 自動跟注<br><input id="s_AUTO_FOLLOW" type="checkbox" ${SETS.AUTO_FOLLOW?'checked':''}></label>`;
+    `<label class="muted">系統自動跟注（紙注，非 AI）<br><input id="s_AUTO_FOLLOW" type="checkbox" ${SETS.AUTO_FOLLOW?'checked':''}></label>`;
 }
+document.addEventListener('change', e=>{
+  if(e.target && e.target.id && e.target.id.startsWith('s_')){
+    const m=document.getElementById('setmsg'); if(m) m.textContent='● 有未儲存改動，撳「儲存設定」';
+  }
+});
 async function saveSettings(){
   const v=(id)=>document.getElementById('s_'+id);
   const body={AI_ENABLED:v('AI_ENABLED').checked, AUTO_FOLLOW:v('AUTO_FOLLOW').checked};

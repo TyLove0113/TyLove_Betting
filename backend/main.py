@@ -277,7 +277,8 @@ def api_ai():
                     "calls_today": ai.calls_today(),
                     "tokens_today": ai.tokens_today(),
                     "cap": getattr(config, "AI_MAX_CALLS_PER_DAY", 12),
-                    "has_key": bool(getattr(config, "AI_API_KEY", ""))})
+                    "has_key": bool(getattr(config, "AI_API_KEY", "")),
+                    "recent": [dict(r) for r in ai.recent(8)]})
 
 
 @app.route("/api/settings")
