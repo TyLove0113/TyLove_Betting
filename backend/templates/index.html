@@ -94,6 +94,8 @@ async function load(){
        <select id="addsel"><option value="H">主勝</option><option value="D">和</option><option value="A">客勝</option><option value="OVER">大</option><option value="UNDER">細</option></select>
        <input id="addst" placeholder="$ 金額" style="width:90px">
        <input id="addod" placeholder="@賠率" style="width:90px">
+       <button class="mini" onclick="syncFx()">⟳ 同步賽程</button>
+       <span id="addmsg2" class="muted" style="font-size:12px"></span>
        <button onclick="addBet()" style="background:#1f6f43;color:#fff;border:0;border-radius:4px;padding:4px 10px;cursor:pointer">＋ 新增真實注</button>
      </div>`+tbl(grp('real'),true)+`</div>`;
 
@@ -139,9 +141,17 @@ document.getElementById('doc_fix').onclick=()=>runDoctor(true);
 
 async function fillFx(){try{const fx=await (await fetch('/api/fixtures')).json();const dl=document.getElementById('fxlist');
   if(dl) dl.innerHTML=fx.slice(0,100).map(x=>`<option value="${x.home_team} vs ${x.away_team}">`).join('');}catch(e){}}
+async function syncFx(){
+  const b=document.getElementById('addmsg2');
+  if(b) b.textContent='同步中…（最多 20 秒）';
+  try{const r=await (await fetch('/api/sync',{method:'POST'})).json();
+    if(b) b.textContent=r.ok?('✅ 已同步 '+r.note):('⚠️ 同步失敗：'+r.error);
+    await fillFx();
+  }catch(e){ if(b) b.textContent='⚠️ 同步失敗：'+e; }
+}
 async function addBet(){
   const m=(document.getElementById('addm').value||'').trim();
-  const body={match:m.split(' vs ')[0], market:document.getElementById('addmk').value,
+  const body={match:m, market:document.getElementById('addmk').value,
     line:document.getElementById('addln').value.trim(), selection:document.getElementById('addsel').value,
     stake:parseFloat(document.getElementById('addst').value||'0'), odds:parseFloat(document.getElementById('addod').value||'0')};
   const r=await fetch('/api/bets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

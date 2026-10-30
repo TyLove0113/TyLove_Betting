@@ -85,12 +85,19 @@ def sync_fixtures(date=None, days_ahead=2):
     else:
         d0 = today_hk()
         dates = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days_ahead + 1)]
-    total, notes = 0, []
+    total, notes, errs = 0, [], []
     for ds in dates:
-        r = _sync_one(ds)
-        total += r["saved"]
-        notes.append(f"{ds}:{r['saved']}")
-    return {"saved": total, "note": " ".join(notes), "date": dates[0] if dates else ""}
+        try:
+            r = _sync_one(ds)
+            total += r["saved"]
+            notes.append(f"{ds[5:]}:{r['saved']}")
+        except Exception as e:                        # noqa: BLE001
+            errs.append(f"{ds[5:]} {type(e).__name__}")
+    note = " ".join(notes)
+    if errs:
+        note += "｜失敗 " + " ".join(errs)
+    return {"saved": total, "note": note, "date": dates[0] if dates else "",
+            "errors": errs}
 
 
 def _sync_one(date):

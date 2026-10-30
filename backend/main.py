@@ -220,13 +220,15 @@ def _resolve_fixture(text, sync=True):
                     (lo, hi, kw, kw), one=True)
 
     row = _search()
+    err = ""
     if not row and sync:                                  # 未同步到未來賽程 → 即刻抓一次
         try:
             import scanner
-            scanner.sync_fixtures()
+            r = scanner.sync_fixtures(days_ahead=3)
+            err = f"同步 {r.get('note')}"
             row = _search()
-        except Exception:                                 # noqa: BLE001
-            pass
+        except Exception as e:                            # noqa: BLE001
+            err = f"同步失敗 {type(e).__name__}: {e}"
     if row:
         return row["match_id"], ""
     old = db.q("""SELECT home_team, away_team, kickoff_hk FROM fixtures
@@ -234,7 +236,12 @@ def _resolve_fixture(text, sync=True):
                   ORDER BY ABS(julianday(kickoff_hk)-julianday('now')) LIMIT 3""",
                (f"%{parts[0]}%", f"%{parts[0]}%", f"%{parts[-1]}%"))
     tip = "；".join(f"{r['home_team']} vs {r['away_team']}（{r['kickoff_hk'][5:16]}）" for r in old)
-    return None, ("搵唔到未開賽嘅賽事。" + (f"最接近：{tip}" if tip else "試打 /sync 再試。"))
+    tot = db.q("SELECT COUNT(*) c, MAX(kickoff_hk) m FROM fixtures", one=True) or {}
+    dbg = f"庫內 {tot.get('c', 0)} 場，最新 {str(tot.get('m') or '-')[:16]}"
+    if err:
+        dbg += f"；{err}"
+    return None, ("搵唔到未開賽嘅賽事。" + (f"最接近：{tip}。" if tip else "")
+                  + f"（{dbg}）")
 
 
 @app.route("/api/bets", methods=["POST"])
@@ -402,8 +409,25 @@ def ledger_csv():
 
 @app.route("/api/fixtures")
 def api_fixtures():
-    rows = db.q("SELECT * FROM fixtures ORDER BY kickoff_hk DESC LIMIT 100")
+    """預設：由 6 小時前到未來 3 日（連賽果一齊，方便睇）。"""
+    from datetime import timedelta
+    days = request.args.get("days", type=int) or 3
+    now = now_hk()
+    lo = (now - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M")
+    hi = (now + timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
+    rows = db.q("""SELECT * FROM fixtures WHERE kickoff_hk BETWEEN ? AND ?
+                   ORDER BY kickoff_hk LIMIT 300""", (lo, hi))
     return jsonify(rows)
+
+
+@app.route("/api/sync", methods=["POST"])
+def api_sync():
+    """手動同步賽程（今日＋未來 3 日），出錯會回報原因。"""
+    try:
+        r = scanner.sync_fixtures(days_ahead=3)
+        return jsonify({"ok": True, **r})
+    except Exception as e:                                       # noqa: BLE001
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/scan", methods=["POST", "GET"])
