@@ -38,7 +38,7 @@ HELP = """<b>HKJC 足球價值投注系統</b>
 
 <b>💎 價值同落注</b>
 /value － 今日價值清單（EV 排序）
-/scan － 即刻重新掃描（唔等排程）\n/review － 即刻跑一次 AI 賽後檢討（手動）\n/kill － 睇停手檢查現況\n/why － 解釋今次掃描：每個篩選條件擋走幾多
+/scan － 即刻重新掃描（唔等排程）\n/review [日數|yesterday|log] － 手動跑 AI 賽後檢討（預設 2 日）\n/kill － 睇停手檢查現況\n/why － 解釋今次掃描：每個篩選條件擋走幾多
 /bet － 今日注項＋一撳記錄真實注
 /bet &lt;id&gt; &lt;注碼&gt; [@賠率] － 記錄真實注（例：/bet 38 10 @4.75）
 /edit &lt;R38&gt; &lt;注碼&gt; [@賠率] － 改金額／賠率
@@ -237,12 +237,24 @@ def dispatch(text):
     if cmd == "/review":
         try:
             import ai
+            a0 = (args[0].lower() if args else "")
+            if a0 in ("log", "紀錄", "记录", "history"):
+                return journal.ai_review_log(int(args[1]) if len(args) >= 2 and args[1].isdigit() else 5), None
             if not ai.enabled():
                 return ("⚠️ AI 未開啟或未設 key。\n"
                         "網頁「⚙️ 設定」勾 AI 開啟並填 key，或 /set AI_API_KEY sk-... 然後 /set AI_ENABLED true"), None
-            t = journal.ai_review_today()
+            if a0 in ("yesterday", "昨日", "琴日"):
+                from datetime import timedelta
+                until = (now_hk() - timedelta(days=1)).strftime("%Y-%m-%d")
+                t = journal.ai_review(until=until)
+            elif a0[:2] == "20" and len(a0) >= 10:
+                t = journal.ai_review(until=a0[:10])
+            else:
+                days = int(a0) if a0.isdigit() else 2
+                t = journal.ai_review(days=max(1, min(days, 14)))
             if not t:
-                return "今日暫時冇已結算注，或者 AI 回覆為空（打 /ai 睇有冇錯誤紀錄）。", None
+                return ("搵唔到可檢討嘅已結算注（只計 paper 注）。\n"
+                        "試 /review 7 睇最近 7 日，或 /diag 睇有冇數據。"), None
             return t, None
         except Exception as e:                                   # noqa: BLE001
             notifier.push_error("ai_review", e)

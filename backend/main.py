@@ -7,6 +7,7 @@ Scheduler lessons from TyLove are baked in:
   * a daily heartbeat makes silence distinguishable from a dead system
 """
 import json
+import sqlite3
 import os
 import threading
 import time
@@ -190,18 +191,61 @@ def api_bets():
     return jsonify(rows)
 
 
+def _resolve_fixture(text, sync=True):
+    """隊名（可 'A vs B'）→ match_id。優先未開賽／最近，唔會揀中幾個月前舊場。"""
+    import re
+    from datetime import timedelta
+    txt = str(text or "").strip()
+    if not txt:
+        return None, "要填隊名"
+    parts = [x.strip() for x in re.split(r"\s+(?:vs\.?|v|對)\s+", txt, maxsplit=1, flags=re.I) if x.strip()]
+    now = now_hk()
+    lo = (now - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M")
+    hi = (now + timedelta(days=30)).strftime("%Y-%m-%d %H:%M")
+
+    def _search():
+        if len(parts) == 2:                              # 兩隊都要中（正反都得）
+            home, away = f"%{parts[0]}%", f"%{parts[1]}%"
+            return db.q("""SELECT * FROM fixtures
+                           WHERE kickoff_hk BETWEEN ? AND ?
+                             AND ((home_team LIKE ? AND away_team LIKE ?)
+                               OR (home_team LIKE ? AND away_team LIKE ?))
+                           ORDER BY ABS(julianday(kickoff_hk)-julianday('now')) LIMIT 1""",
+                        (lo, hi, home, away, away, home), one=True)
+        kw = f"%{parts[0]}%"
+        return db.q("""SELECT * FROM fixtures
+                       WHERE kickoff_hk BETWEEN ? AND ?
+                         AND (home_team LIKE ? OR away_team LIKE ?)
+                       ORDER BY ABS(julianday(kickoff_hk)-julianday('now')) LIMIT 1""",
+                    (lo, hi, kw, kw), one=True)
+
+    row = _search()
+    if not row and sync:                                  # 未同步到未來賽程 → 即刻抓一次
+        try:
+            import scanner
+            scanner.sync_fixtures()
+            row = _search()
+        except Exception:                                 # noqa: BLE001
+            pass
+    if row:
+        return row["match_id"], ""
+    old = db.q("""SELECT home_team, away_team, kickoff_hk FROM fixtures
+                  WHERE home_team LIKE ? OR away_team LIKE ? OR away_team LIKE ?
+                  ORDER BY ABS(julianday(kickoff_hk)-julianday('now')) LIMIT 3""",
+               (f"%{parts[0]}%", f"%{parts[0]}%", f"%{parts[-1]}%"))
+    tip = "；".join(f"{r['home_team']} vs {r['away_team']}（{r['kickoff_hk'][5:16]}）" for r in old)
+    return None, ("搵唔到未開賽嘅賽事。" + (f"最接近：{tip}" if tip else "試打 /sync 再試。"))
+
+
 @app.route("/api/bets", methods=["POST"])
 def api_bet_add():
     """手動加一注真實注：{match_id|match, market, line, selection, stake, odds}"""
     d = request.get_json(force=True, silent=True) or {}
     match_id = d.get("match_id")
     if not match_id and d.get("match"):                 # 用隊名都得
-        kw = f"%{d['match']}%"
-        r = db.q("SELECT match_id FROM fixtures WHERE home_team LIKE ? OR away_team LIKE ? "
-                 "ORDER BY kickoff_hk LIMIT 1", (kw, kw), one=True)
-        match_id = r["match_id"] if r else None
-    if not match_id:
-        return jsonify({"ok": False, "error": "搵唔到賽事"}), 400
+        match_id, why = _resolve_fixture(d["match"])
+        if not match_id:
+            return jsonify({"ok": False, "error": why}), 400
     try:
         stake = float(d.get("stake") or 0)
         odds = float(d.get("odds") or 0)
@@ -212,11 +256,21 @@ def api_bet_add():
     market = (d.get("market") or "HAD").upper()
     line = str(d.get("line") or "").strip()
     sel = (d.get("selection") or "H").upper()
-    bid = db.ex("""INSERT INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
-                   odds_taken, stake, status, note)
-                   VALUES (NULL,?,?, 'real', ?,?,?,?,?,'open','added on dashboard')""",
-                (match_id, now_hk().strftime("%Y-%m-%d %H:%M:%S"), market, line, sel, odds, stake))
-    return jsonify({"ok": True, "id": bid, "code": f"R{bid}"})
+    try:
+        bid = db.ex("""INSERT INTO bets (value_bet_id, match_id, created_at, mode, market, line, selection,
+                       odds_taken, stake, status, note)
+                       VALUES (NULL,?,?, 'real', ?,?,?,?,?,'open','added on dashboard')""",
+                    (match_id, now_hk().strftime("%Y-%m-%d %H:%M:%S"), market, line, sel, odds, stake))
+    except sqlite3.IntegrityError:
+        ex = db.q("""SELECT id, stake FROM bets WHERE match_id=? AND market=? AND IFNULL(line,'')=?
+                      AND selection=? AND mode='real'""", (match_id, market, line, sel), one=True)
+        return jsonify({"ok": False, "dup": True,
+                        "error": (f"呢注已經記錄過（R{ex['id']}，${ex['stake']:.0f}）—— 想改金額撳右邊 ✏️"
+                                  if ex else "呢注已經記錄過")}), 409
+    fx = db.q("SELECT home_team, away_team, kickoff_hk FROM fixtures WHERE match_id=?",
+              (match_id,), one=True) or {}
+    return jsonify({"ok": True, "id": bid, "code": f"R{bid}",
+                    "matched": f"{fx.get('home_team','')} vs {fx.get('away_team','')} ({fx.get('kickoff_hk','')[:16]})"})
 
 
 @app.route("/api/bets/<int:bet_id>", methods=["PATCH"])
@@ -278,7 +332,10 @@ def api_ai():
                     "tokens_today": ai.tokens_today(),
                     "cap": getattr(config, "AI_MAX_CALLS_PER_DAY", 12),
                     "has_key": bool(getattr(config, "AI_API_KEY", "")),
-                    "recent": [dict(r) for r in ai.recent(8)]})
+                    "recent": [dict(r) for r in ai.recent(8)],
+                    "reviews": [dict(r) for r in db.q(
+                        "SELECT day,created_at,bets,pnl,tokens,points,avoid FROM ai_reviews "
+                        "ORDER BY id DESC LIMIT 3")]})
 
 
 @app.route("/api/settings")

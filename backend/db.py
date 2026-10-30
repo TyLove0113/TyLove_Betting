@@ -71,6 +71,21 @@ CREATE TABLE IF NOT EXISTS team_matches (
 );
 CREATE INDEX IF NOT EXISTS idx_tm_teams ON team_matches(home_team, away_team, played_on);
 
+CREATE TABLE IF NOT EXISTS ai_reviews (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    day        TEXT,
+    created_at TEXT,
+    days       INTEGER,
+    bets       INTEGER,
+    staked     REAL,
+    returned   REAL,
+    pnl        REAL,
+    model      TEXT,
+    tokens     INTEGER DEFAULT 0,
+    points     TEXT,
+    avoid      TEXT
+);
+
 CREATE TABLE IF NOT EXISTS ai_calls (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ts         TEXT,

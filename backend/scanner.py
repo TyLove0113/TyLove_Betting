@@ -9,6 +9,8 @@ Flow per run
   6. if AUTO_FOLLOW is on, book them automatically as paper bets so that a
      real track record builds up even when you are asleep
 """
+from datetime import timedelta
+
 import config
 import db
 import engine
@@ -76,8 +78,22 @@ def _release_scan_lock(path):
 
 
 # --------------------------------------------------------------- sync helpers
-def sync_fixtures(date=None):
-    date = date or today_hk().strftime("%Y-%m-%d")
+def sync_fixtures(date=None, days_ahead=2):
+    """同步賽程。預設今日＋未來 2 日（比賽完就查唔返，唔同步未來會「搵唔到賽事」）。"""
+    if date:
+        dates = [date]
+    else:
+        d0 = today_hk()
+        dates = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days_ahead + 1)]
+    total, notes = 0, []
+    for ds in dates:
+        r = _sync_one(ds)
+        total += r["saved"]
+        notes.append(f"{ds}:{r['saved']}")
+    return {"saved": total, "note": " ".join(notes), "date": dates[0] if dates else ""}
+
+
+def _sync_one(date):
     fixtures, note = hkjc.fetch_schedule(date)
     saved = 0
     for f in fixtures:

@@ -268,15 +268,25 @@ def kill_switch(mode="paper"):
     return {"fired": False, "roi": roi, "n": len(rows)}
 
 
-def ai_review_today():
-    """每日一次 AI 賽後檢討（唔逐注問，省 token）。"""
+def ai_review(days=2, until=None):
+    """AI 賽後檢討（一次 call）。days=1 今日；2=今日＋昨日。結果會存檔。"""
     import ai
+    import json as _json
+    from datetime import timedelta
     start, _ = day_bounds_hk()
+    if until:                                        # 指定某日（YYYY-MM-DD）
+        start = parse_hk(f"{until} 00:00")
+        span_end = start + timedelta(days=1)
+    else:
+        start = start - timedelta(days=max(days, 1) - 1)
+        span_end = day_bounds_hk()[1]
     rows = db.q("""SELECT b.market, b.line, b.selection, b.odds_taken, b.status, b.stake, b.payout,
                           f.home_team, f.away_team
                    FROM bets b LEFT JOIN fixtures f ON f.match_id=b.match_id
-                   WHERE b.status IN ('won','lost','push') AND b.settled_at>=?
-                   ORDER BY b.id DESC LIMIT 30""", (start.strftime("%Y-%m-%d %H:%M:%S"),))
+                   WHERE b.mode='paper' AND b.status IN ('won','lost','push')
+                     AND b.settled_at>=? AND b.settled_at<?
+                   ORDER BY b.id DESC LIMIT 40""",
+                (start.strftime("%Y-%m-%d %H:%M:%S"), span_end.strftime("%Y-%m-%d %H:%M:%S")))
     if not rows:
         return None
     feed = [(f"{r['home_team']} vs {r['away_team']} {r['market']} {r['line'] or ''} {r['selection']} @{r['odds_taken'] or 0:.2f}",
@@ -284,12 +294,41 @@ def ai_review_today():
     out = ai.daily_review(feed)
     if not out:
         return None
-    lines = ["🧠 <b>AI 賽後檢討</b>"]
-    for pt in (out.get("points") or [])[:5]:
-        lines.append("• " + notifier.esc(str(pt))[:120])
-    if out.get("avoid"):
-        lines.append("🚫 明日避免：" + "、".join(notifier.esc(str(x))[:30] for x in out["avoid"][:3]))
+    staked = sum(x[2] for x in feed)
+    returned = sum(x[3] for x in feed)
+    pts = [str(x)[:160] for x in (out.get("points") or [])[:5]]
+    avoid = [str(x)[:60] for x in (out.get("avoid") or [])[:3]]
+    db.ex("""INSERT INTO ai_reviews (day, created_at, days, bets, staked, returned, pnl, model, tokens, points, avoid)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+          (start.strftime("%Y-%m-%d"), now_hk().strftime("%Y-%m-%d %H:%M:%S"), days, len(feed),
+           staked, returned, round(returned - staked, 2), getattr(config, "AI_MODEL", ""),
+           getattr(ai, "_LAST_TOKENS", [0])[0] if hasattr(ai, "_LAST_TOKENS") else 0,
+           _json.dumps(pts, ensure_ascii=False), _json.dumps(avoid, ensure_ascii=False)))
+    head = f"🧠 <b>AI 賽後檢討</b>（{start.strftime('%m-%d')} 起 {len(feed)} 注 · 盈虧 ${returned - staked:+.0f}）"
+    lines = [head] + ["• " + notifier.esc(x) for x in pts]
+    if avoid:
+        lines.append("🚫 明日避免：" + "、".join(notifier.esc(x) for x in avoid))
     return "\n".join(lines)
+
+
+def ai_review_today(days=2):
+    return ai_review(days=days)
+
+
+def ai_review_log(n=5):
+    rows = db.q("SELECT * FROM ai_reviews ORDER BY id DESC LIMIT ?", (n,))
+    if not rows:
+        return "未有 AI 檢討紀錄（打 /review 跑一次）。"
+    import json as _json
+    out = ["🗂 <b>AI 檢討紀錄</b>（最近 %d 次）" % len(rows)]
+    for r in rows:
+        pts = _json.loads(r["points"] or "[]")
+        out.append(f"\n<b>{r['day']}</b> · {r['bets']} 注 · 盈虧 ${(r['pnl'] or 0):+.0f} · {r['tokens']}t")
+        out += ["• " + notifier.esc(p[:110]) for p in pts[:3]]
+        av = _json.loads(r["avoid"] or "[]")
+        if av:
+            out.append("🚫 " + "、".join(notifier.esc(x) for x in av[:3]))
+    return "\n".join(out)
 
 
 def kill_status(mode="paper"):
