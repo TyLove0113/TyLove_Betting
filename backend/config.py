@@ -57,7 +57,7 @@ def _env(key, default=None, cast=None):
             return default
     return v
 
-VERSION = "1.16.0"
+VERSION = "1.18.0"
 
 
 def _version_from_file():
@@ -136,8 +136,9 @@ MODEL_MARKET_BLEND = _env("MODEL_MARKET_BLEND", 0.5, float)   # 0.5 = 模型同�
 MAX_ODDS = _env("MAX_ODDS", 4.5, float)                       # 唔買太冷門
 MIN_MODEL_P = _env("MIN_MODEL_P", 0.30, float)                # 模型機率下限
 MAX_BETS_PER_MATCH = _env("MAX_BETS_PER_MATCH", 1, int)       # 同一場最多幾注
+MAX_VIG = _env("MAX_VIG", 0.09, float)                         # 抽水上限（0.09 = 9%）
 MIN_ODDS = _env("MIN_ODDS", 1.90, float)                       # ignore short prices (1.71 細水長期打唔贏)
-BLOCK_SELECTIONS = _env("BLOCK_SELECTIONS", "HAD:D,TTG:OVER", str)   # 停用組合（用逗號分隔，空白＝全開）
+BLOCK_SELECTIONS = _env("BLOCK_SELECTIONS", "", str)   # 停用組合（用逗號分隔，空白＝全開）
 DASH_TOKEN = _env("DASH_TOKEN", "", str)                    # 設定頁保護（留空＝開放，會有提示）
 AI_ENABLED = _env("AI_ENABLED", False, bool)                  # 可選 AI 層（預設關）
 AI_API_KEY = _env("AI_API_KEY", "", str)
@@ -162,7 +163,7 @@ DAYLOG_HOUR = _env("DAYLOG_HOUR", 23, int)
 MAX_DAILY_LOSS_PCT = _env("MAX_DAILY_LOSS_PCT", 5.0, float)    # stop suggesting after -5% day
 MIN_MINUTES_BEFORE_KICKOFF = _env("MIN_MINUTES_BEFORE_KICKOFF", 5, int)
 DEDUPE_MINUTES = _env("DEDUPE_MINUTES", 45, int)               # don't repeat the same pick within this window
-MARKETS = [m.strip().upper() for m in _env("MARKETS", "HAD,TTG", str).split(",") if m.strip()]
+MARKETS = [m.strip().upper() for m in _env("MARKETS", "TTG", str).split(",") if m.strip()]  # 只做低抽水 2-way；要主客和就 /set MARKETS HAD,TTG
 
 # ---------------------------------------------------------------- scheduling (HK time)
 SCAN_OFFSETS_MIN = _env("SCAN_OFFSETS_MIN", "60,30", str)      # minutes before kickoff to scan

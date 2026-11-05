@@ -135,7 +135,8 @@ def coverage():
            f"今日/未來 {len(rows)} 場：有隊史 {ok} 場 · 資料不足 {thin} 場", ""]
     for f, meta, ah, dh, aa, da in sample:
         out.append(f"{notifier.esc(f['home_team'])} vs {notifier.esc(f['away_team'])}"
-                   f"（隊史 {meta['home_played']}/{meta['away_played']} 場）")
+                   f"（隊史 {meta['home_played']}/{meta['away_played']} 場 · "
+                   f"{'對手校正' if meta.get('model') == 'opp-adjusted' else '入球率'}）")
         out.append(f"　攻 {ah:.2f} 守 {dh:.2f} ｜ 攻 {aa:.2f} 守 {da:.2f}"
                    f"　聯賽平均 {meta.get('league_avg', 0):.2f} 球")
     if tm < 200:

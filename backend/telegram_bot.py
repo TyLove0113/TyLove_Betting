@@ -277,6 +277,21 @@ def dispatch(text):
             lines.append("➡️ ROI 未穿門檻，繼續運行")
         return "\n".join(lines), None
 
+    if cmd == "/vig":
+        import vig
+        rows = vig.summary()
+        if not rows:
+            return "冇足夠賠率資料計抽水。先打 /sync 同 /scan。", None
+        out = ["🧮 <b>盤口抽水</b>（overround，越低越易打和）", ""]
+        for r in rows:
+            mark = "✅" if r["vig_pct"] / 100 <= getattr(config, "MAX_VIG", 0.09) else "⛔"
+            out.append(f"{mark} {notifier.esc(r['label'])}：<b>{r['vig_pct']:.2f}%</b>"
+                       f"（{r['lines']} 條線）")
+        out += ["", f"容許上限：{getattr(config, 'MAX_VIG', 0.09) * 100:.0f}%"
+                    f"　現時市場：{','.join(config.MARKETS) or '全部'}",
+                "意思：抽水 8% ＝ 你要比市場準 8 個百分點才打和；主客和 13% 就要準 13 個。"]
+        return "\n".join(out), None
+
     if cmd == "/why":
         T = {}
         import scanner as _sc
@@ -287,6 +302,8 @@ def dispatch(text):
                 f"模型計出候選 {T.get('cand', 0)} 個（含唔值博）", ""]
         rows += [
             f"· 唔夠 EV（<{config.EV_THRESHOLD*100:.0f}%）：{T.get('value', 0)}",
+            f"· 市場唔喺白名單（{','.join(config.MARKETS) or '全部'}）：{T.get('market_off', 0)}",
+            f"· 抽水 > {getattr(config, 'MAX_VIG', 0.09)*100:.0f}%：{T.get('vig_high', 0)}",
             f"· 賠率 < {config.MIN_ODDS:.2f}：{T.get('odds_low', 0)}",
             f"· 賠率 > {getattr(config, 'MAX_ODDS', 99):.2f}：{T.get('odds_high', 0)}",
             f"· 機率 < {getattr(config, 'MIN_MODEL_P', 0)*100:.0f}%：{T.get('min_p', 0)}",

@@ -117,6 +117,26 @@ def strength_for_match(home_team, away_team, league, as_of=None):
     hs = team_stats(home_team, league, as_of)
     as_ = team_stats(away_team, league, as_of)
     lf = league_factors(league, as_of)
+
+    # 對手校正模型（聯賽歷史夠深才用）：贏強隊同贏弱隊唔會再當一樣
+    try:
+        import oppmodel
+        fit = oppmodel.fit(league, as_of)
+    except Exception:                                   # noqa: BLE001
+        fit = None
+    if fit:
+        att, dfn, avg_all, fac, n = fit
+        hs_att = att.get(home_team, 1.0)
+        hs_def = dfn.get(home_team, 1.0)
+        as_att = att.get(away_team, 1.0)
+        as_def = dfn.get(away_team, 1.0)
+        meta = {
+            "home_played": hs["played"], "away_played": as_["played"],
+            "thin": hs["played"] < 4 or as_["played"] < 4,
+            "league_avg": avg_all, "home_factor": fac, "away_factor": 1.0,
+            "league_matches": n, "model": "opp-adjusted",
+        }
+        return hs_att, hs_def, as_att, as_def, meta
     meta = {
         "home_played": hs["played"], "away_played": as_["played"],
         "thin": (hs["played"] + as_["played"]) < 6,

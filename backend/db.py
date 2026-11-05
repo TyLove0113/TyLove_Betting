@@ -220,7 +220,7 @@ def _migrate_bets_unique(c):
 
 def _migrate():
     """舊 DB 補欄位（唔會刪資料）。"""
-    for col, typ in (("model_p", "REAL"), ("ev_pct", "REAL"), ("model_version", "TEXT")):
+    for col, typ in (("model_p", "REAL"), ("ev_pct", "REAL"), ("model_version", "TEXT"), ("vig", "REAL")):
         try:
             ex(f"ALTER TABLE bets ADD COLUMN {col} {typ}")
         except Exception:

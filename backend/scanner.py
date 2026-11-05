@@ -18,6 +18,7 @@ import hkjc
 import notifier
 import staking
 import value
+import vig
 from timeutil import now_hk, minutes_until, today_hk, parse_hk, to_hk
 
 SEL_LABEL = {"H": "主勝", "D": "和", "A": "客勝", "OVER": "大", "UNDER": "細"}
@@ -264,7 +265,13 @@ def scan(min_minutes=None, max_minutes=None, fixtures=None, dry_run=False, push=
             if row["selection"] == "INFO":
                 continue
             if row["market"] not in config.MARKETS:
+                T["market_off"] = T.get("market_off", 0) + 1
                 continue
+            _ok_vig, _ov = vig.gate(row["match_id"], row["market"], row["line"])
+            if not _ok_vig:                            # 抽水太深：市場要你準過 X% 才打和
+                T["vig_high"] = T.get("vig_high", 0) + 1
+                continue
+            row["vig"] = None if _ov is None else round((_ov - 1) * 100, 2)
             if not row["is_value"]:
                 T["value"] += 1
                 continue
